@@ -1,3 +1,5 @@
+#![no_std]
+
 /// Defines a valid data length for various length-prefixed data
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ElementDataLength {
