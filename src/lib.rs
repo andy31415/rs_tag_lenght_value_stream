@@ -108,6 +108,33 @@ impl ElementType {
         (control & Self::CONTROL_BITS) == self.get_control_byte_bits()
     }
 
+    /// Returns true if the data for this tag contains a size.
+    ///
+    /// Specifically utf8 and byte strings are encoded as:
+    /// [control 1-byte] [tag 0-8-bytes] [length-1-4-bytes] [data]
+    /// 
+    /// Note that container types (structs, lists) are not sized and instead
+    /// use an 'end of container' tag to delimit them.
+    /// 
+    /// ```
+    /// # use tag_length_value_stream::*;
+    ///
+    /// assert!(ElementType::Utf8String(ElementDataLength::Bytes2).is_sized_data());
+    /// assert!(ElementType::ByteString(ElementDataLength::Bytes4).is_sized_data());
+    /// assert!(!ElementType::Structure.is_sized_data());
+    /// assert!(!ElementType::Array.is_sized_data());
+    /// assert!(!ElementType::List.is_sized_data());
+    /// assert!(!ElementType::Null.is_sized_data());
+    /// assert!(!ElementType::EndOfContainer.is_sized_data());
+    /// ```
+    pub fn is_sized_data(&self) -> bool {
+        match self {
+            ElementType::Utf8String(_) => true,
+            ElementType::ByteString(_) => true,
+            _ => false,
+        }
+    }
+
     /// Extracts the element type from a control byte.
     /// Returns an option if the control type is not known.
     ///
