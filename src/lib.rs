@@ -92,7 +92,12 @@ impl ElementType {
             ElementType::EndOfContainer => 0b11000,
         }
     }
-    
+ 
+
+    /// Determines if a specific control bit is matched by the current value.
+    /// 
+    /// Looks at the lower bits of the control bit ans see if those correspond
+    /// to self.
     pub fn matches_control_bit(&self, control: u8) -> bool {
         (control & ElementType::CONTROL_BITS) == self.get_control_byte_bits()
     }
