@@ -8,8 +8,7 @@ categories = [
     "no-std",
 ]
 keywords = [
-    "neopixel",
-    "ws2812"
+    "tag-length-value",
 ]
 license = "Apache-2.0 OR MIT"
 readme = "README.md"
