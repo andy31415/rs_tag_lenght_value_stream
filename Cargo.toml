@@ -14,7 +14,7 @@ keywords = [
 license = "Apache-2.0 OR MIT"
 readme = "README.md"
 description = "Support Weave Tag-length encoded data (see https://github.com/openweave/openweave-core/blob/master/doc/specs/weave-tlv-format.pdf)"
-repository = "https://github.com/andy31415/tag_length_value_stream"
+repository = "https://github.com/andy31415/rs_tag_length_value_stream"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
