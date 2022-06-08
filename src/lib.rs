@@ -1,26 +1,56 @@
 /// Defines a valid data length for various length-prefixed data
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ElementDataLength {
+    /// Length encoded over 1 byte
     Bytes1,
+
+    /// Length encoded over 2 bytes
     Bytes2,
+
+    /// Length encoded over 4 bytes
     Bytes4,
+
+    /// Length encoded over 8 bytes
     Bytes8,
 }
 
 /// Defines all element types supported by the TLV encoding for control blocks
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ElementType {
+    /// Represents a signed integer
     Signed(ElementDataLength),
+
+    /// Represents an unsigned integer
     Unsigned(ElementDataLength),
+
+    /// Represents a boolean value
     Boolean(bool),
-    Float, // 4-byte float
-    Double, // 8-byte float
+    
+    /// Represents a floating point number over 4 bytes
+    Float,
+
+    /// Represents a floating point number over 8 bytes
+    Double,
+    
+    /// Represents a string encoded as utf-8
     Utf8String(ElementDataLength),
+
+    /// Represents a binary data blob
     ByteString(ElementDataLength),
+
+    /// No value/null
     Null,
+
+    /// Beginning of a structure. Ends with EndOfContainer
     Structure,
+
+    /// Beginning of an array. Ends with EndOfContainer
     Array,
+
+    /// Beginning of a list. Ends with EndOfContainer
     List,
+
+    /// Marks the end of a structure/array/list
     EndOfContainer,
 }
 
