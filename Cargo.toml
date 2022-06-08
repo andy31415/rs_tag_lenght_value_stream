@@ -1,7 +1,20 @@
 [package]
 name = "tlv_stream"
 version = "0.1.0"
-edition = "2021"
+edition = "2018"
+authors = ["Andrei Litvin <andy314@gmail.com>"]
+
+categories = [
+    "no-std",
+]
+keywords = [
+    "neopixel",
+    "ws2812"
+]
+license = "Apache-2.0 OR MIT"
+readme = "README.md"
+description = "Support Weave Tag-length encoded data (see https://github.com/openweave/openweave-core/blob/master/doc/specs/weave-tlv-format.pdf)"
+repository = "https://github.com/andy31415/tag_length_value_stream"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
