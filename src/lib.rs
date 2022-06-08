@@ -1,5 +1,5 @@
 /// Defines a valid data length for various length-prefixed data
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ElementDataLength {
     Bytes1,
     Bytes2,
@@ -8,10 +8,10 @@ pub enum ElementDataLength {
 }
 
 /// Defines all element types supported by the TLV encoding for control blocks
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ElementType {
-    SignedInteger(ElementDataLength),
-    UnsignedInteger(ElementDataLength),
+    Signed(ElementDataLength),
+    Unsigned(ElementDataLength),
     Boolean(bool),
     Float, // 4-byte float
     Double, // 8-byte float
@@ -25,7 +25,7 @@ pub enum ElementType {
 }
 
 /// Defines various tag types supported by TLV encoding
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum TagType {
     Anonymous,
     ContextSpecific1byte,
@@ -45,7 +45,7 @@ impl ElementType {
     /// be in order for this element type to match
     fn get_control_byte_bits(&self) -> u8 {
         match self {
-            ElementType::SignedInteger(len) => {
+            ElementType::Signed(len) => {
                 match len {
                     ElementDataLength::Bytes1 => 0b00000,
                     ElementDataLength::Bytes2 => 0b00001,
@@ -53,7 +53,7 @@ impl ElementType {
                     ElementDataLength::Bytes8 => 0b00011,
                 }
             }
-            ElementType::UnsignedInteger(len) => {
+            ElementType::Unsigned(len) => {
                 match len {
                     ElementDataLength::Bytes1 => 0b00100,
                     ElementDataLength::Bytes2 => 0b00101,
@@ -63,7 +63,7 @@ impl ElementType {
             }
             ElementType::Boolean(value) => {
                 match value {
-                    false => 0b01001,
+                    false => 0b01000,
                     true  => 0b01001,
                 }
             }
@@ -103,18 +103,43 @@ impl ElementType {
     /// ```
     /// # use tlv_stream::*;
     /// 
-    /// assert_eq!(ElementType::for_control(0x00), Some(ElementType::SignedInteger(ElementDataLength::Bytes1)));
-    /// assert_eq!(ElementType::for_control(0x01), Some(ElementType::SignedInteger(ElementDataLength::Bytes2)));
-    /// assert_eq!(ElementType::for_control(0x02), Some(ElementType::SignedInteger(ElementDataLength::Bytes4)));
-    /// assert_eq!(ElementType::for_control(0x03), Some(ElementType::SignedInteger(ElementDataLength::Bytes8)));
+    /// assert_eq!(ElementType::for_control(0), Some(ElementType::Signed(ElementDataLength::Bytes1)));
+    /// assert_eq!(ElementType::for_control(1), Some(ElementType::Signed(ElementDataLength::Bytes2)));
+    /// assert_eq!(ElementType::for_control(2), Some(ElementType::Signed(ElementDataLength::Bytes4)));
+    /// assert_eq!(ElementType::for_control(3), Some(ElementType::Signed(ElementDataLength::Bytes8)));
+    /// assert_eq!(ElementType::for_control(4), Some(ElementType::Unsigned(ElementDataLength::Bytes1)));
+    /// assert_eq!(ElementType::for_control(5), Some(ElementType::Unsigned(ElementDataLength::Bytes2)));
+    /// assert_eq!(ElementType::for_control(6), Some(ElementType::Unsigned(ElementDataLength::Bytes4)));
+    /// assert_eq!(ElementType::for_control(7), Some(ElementType::Unsigned(ElementDataLength::Bytes8)));
+    /// // ...
     /// ```
     pub fn for_control(control: u8) -> Option<ElementType> {
         match control & ElementType::CONTROL_BITS {
-            0b00000 => Some(ElementType::SignedInteger(ElementDataLength::Bytes1)),
-            0b00001 => Some(ElementType::SignedInteger(ElementDataLength::Bytes2)),
-            0b00010 => Some(ElementType::SignedInteger(ElementDataLength::Bytes4)),
-            0b00011 => Some(ElementType::SignedInteger(ElementDataLength::Bytes8)),
-
+            0b00000 => Some(ElementType::Signed(ElementDataLength::Bytes1)),
+            0b00001 => Some(ElementType::Signed(ElementDataLength::Bytes2)),
+            0b00010 => Some(ElementType::Signed(ElementDataLength::Bytes4)),
+            0b00011 => Some(ElementType::Signed(ElementDataLength::Bytes8)),
+            0b00100 => Some(ElementType::Unsigned(ElementDataLength::Bytes1)),
+            0b00101 => Some(ElementType::Unsigned(ElementDataLength::Bytes2)),
+            0b00110 => Some(ElementType::Unsigned(ElementDataLength::Bytes4)),
+            0b00111 => Some(ElementType::Unsigned(ElementDataLength::Bytes8)),
+            0b01000 => Some(ElementType::Boolean(false)),
+            0b01001 => Some(ElementType::Boolean(true)),
+            0b01010 => Some(ElementType::Float),
+            0b01011 => Some(ElementType::Double),
+            0b01100 => Some(ElementType::Utf8String(ElementDataLength::Bytes1)),
+            0b01101 => Some(ElementType::Utf8String(ElementDataLength::Bytes2)),
+            0b01110 => Some(ElementType::Utf8String(ElementDataLength::Bytes4)),
+            0b01111 => Some(ElementType::Utf8String(ElementDataLength::Bytes8)),
+            0b10000 => Some(ElementType::ByteString(ElementDataLength::Bytes1)),
+            0b10001 => Some(ElementType::ByteString(ElementDataLength::Bytes2)),
+            0b10010 => Some(ElementType::ByteString(ElementDataLength::Bytes4)),
+            0b10011 => Some(ElementType::ByteString(ElementDataLength::Bytes8)),
+            0b10100 => Some(ElementType::Null),
+            0b10101 => Some(ElementType::Structure),
+            0b10110 => Some(ElementType::Array),
+            0b10111 => Some(ElementType::List),
+            0b11000 => Some(ElementType::EndOfContainer),
             _ => None
         }
     }
@@ -125,9 +150,28 @@ impl ElementType {
 
 #[cfg(test)]
 mod tests {
+    use crate::ElementType;
+
     #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
+    fn all_elements_convert_cleanly() {
+        // TLV converts
+        for code in 0u8..=0b11000u8 {
+            let t = ElementType::for_control(code);
+            
+            assert!(t.is_some(), "Can parse control bit 0b{:b}", code);
+            assert!(t.unwrap().matches_control_bit(code), "Matches 0b{:b}", code);
+
+            // Upper bits of control should not matter
+            assert!(t.unwrap().matches_control_bit(0b1000_0000u8 | code), "Lower bits match for 0b{:b}", code);
+            assert!(t.unwrap().matches_control_bit(0b1100_0000u8 | code), "Lower bits match for 0b{:b}", code);
+            assert!(t.unwrap().matches_control_bit(0b1010_0000u8 | code), "Lower bits match for 0b{:b}", code);
+            assert!(t.unwrap().matches_control_bit(0b1110_0000u8 | code), "Lower bits match for 0b{:b}", code);
+            
+        }
+        
+        for code in 0b11001u8..=0b11111 {
+            let t = ElementType::for_control(code);
+            assert!(t.is_none(), "Code 0b{:b} should be reserved, not {:?}", code, t);
+        }
     }
 }
