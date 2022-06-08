@@ -1,5 +1,5 @@
 [package]
-name = "tlv_stream"
+name = "tag_length_value_stream"
 version = "0.1.0"
 edition = "2018"
 authors = ["Andrei Litvin <andy314@gmail.com>"]
