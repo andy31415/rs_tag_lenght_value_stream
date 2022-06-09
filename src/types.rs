@@ -15,6 +15,13 @@ pub enum ElementDataLength {
     Bytes8,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub enum ContainerType {
+    Structure,
+    List,
+    Array
+}
+
 /// Defines all element types supported by the TLV encoding for control blocks
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ElementType {
@@ -42,17 +49,11 @@ pub enum ElementType {
     /// No value/null
     Null,
 
-    /// Beginning of a structure. Ends with EndOfContainer
-    Structure,
-
-    /// Beginning of an array. Ends with EndOfContainer
-    Array,
-
-    /// Beginning of a list. Ends with EndOfContainer
-    List,
+    /// Beginning of a container, ends with ContainerEnd
+    ContainerStart(ContainerType),
 
     /// Marks the end of a structure/array/list
-    EndOfContainer,
+    ContainerEnd,
 }
 impl ElementType {
     const CONTROL_BITS: u8 = 0b11111;
@@ -92,10 +93,14 @@ impl ElementType {
                 ElementDataLength::Bytes8 => 0b10011,
             },
             ElementType::Null => 0b10100,
-            ElementType::Structure => 0b10101,
-            ElementType::Array => 0b10110,
-            ElementType::List => 0b10111,
-            ElementType::EndOfContainer => 0b11000,
+            ElementType::ContainerStart(c) =>{ 
+                match c {
+                    ContainerType::Structure => 0b10101,
+                    ContainerType::Array => 0b10110,
+                    ContainerType::List => 0b10111,
+                }
+            }
+            ElementType::ContainerEnd => 0b11000,
         }
     }
 
@@ -120,11 +125,11 @@ impl ElementType {
     ///
     /// assert!(ElementType::Utf8String(ElementDataLength::Bytes2).is_sized_data());
     /// assert!(ElementType::ByteString(ElementDataLength::Bytes4).is_sized_data());
-    /// assert!(!ElementType::Structure.is_sized_data());
-    /// assert!(!ElementType::Array.is_sized_data());
-    /// assert!(!ElementType::List.is_sized_data());
+    /// assert!(!ElementType::ContainerStart(ContainerType::Structure).is_sized_data());
+    /// assert!(!ElementType::ContainerStart(ContainerType::Array).is_sized_data());
+    /// assert!(!ElementType::ContainerStart(ContainerType::List).is_sized_data());
     /// assert!(!ElementType::Null.is_sized_data());
-    /// assert!(!ElementType::EndOfContainer.is_sized_data());
+    /// assert!(!ElementType::ContainerEnd.is_sized_data());
     /// ```
     pub fn is_sized_data(&self) -> bool {
         match self {
@@ -173,10 +178,10 @@ impl ElementType {
             0b10010 => Some(ElementType::ByteString(ElementDataLength::Bytes4)),
             0b10011 => Some(ElementType::ByteString(ElementDataLength::Bytes8)),
             0b10100 => Some(ElementType::Null),
-            0b10101 => Some(ElementType::Structure),
-            0b10110 => Some(ElementType::Array),
-            0b10111 => Some(ElementType::List),
-            0b11000 => Some(ElementType::EndOfContainer),
+            0b10101 => Some(ElementType::ContainerStart(ContainerType::Structure)),
+            0b10110 => Some(ElementType::ContainerStart(ContainerType::Array)),
+            0b10111 => Some(ElementType::ContainerStart(ContainerType::List)),
+            0b11000 => Some(ElementType::ContainerEnd),
             _ => None,
         }
     }
