@@ -127,7 +127,7 @@ impl<'a> Parser<'a> {
                 })
             }
             ElementType::Double => {
-                if data.len() < 4 {
+                if data.len() < 8 {
                     return None;
                 }
                 Some(IncrementalParseResult {
