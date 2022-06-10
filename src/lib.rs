@@ -639,6 +639,18 @@ mod tests {
             &[1, 2, 3, 4, 5, 6, 7],
         );
 
+        expect_short_read(ElementType::Float, &[]);
+        expect_short_read(ElementType::Float, &[1,]);
+        expect_short_read(ElementType::Float, &[1, 2]);
+        expect_short_read(ElementType::Float, &[1, 2, 3]);
+
+        expect_short_read(ElementType::Double, &[]);
+        expect_short_read(ElementType::Double, &[1,]);
+        expect_short_read(ElementType::Double, &[1, 2]);
+        expect_short_read(ElementType::Double, &[1, 2, 3]);
+        expect_short_read(ElementType::Double, &[1, 2, 3, 4]);
+        expect_short_read(ElementType::Double, &[1, 2, 3, 4, 5, 6, 7]);
+
         expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes1), &[]);
         expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes1), &[1]);
         expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes1), &[2, 1]);
@@ -663,21 +675,18 @@ mod tests {
             ElementType::ByteString(ElementDataLength::Bytes1),
             &[3, 1, 2],
         );
+        expect_short_read(ElementType::ByteString(ElementDataLength::Bytes4), &[1]);
         expect_short_read(
             ElementType::ByteString(ElementDataLength::Bytes4),
-            &[1],
+            &[1, 0, 0],
         );
         expect_short_read(
             ElementType::ByteString(ElementDataLength::Bytes4),
-            &[1,0,0],
+            &[1, 0, 0, 0],
         );
         expect_short_read(
             ElementType::ByteString(ElementDataLength::Bytes4),
-            &[1,0,0,0],
-        );
-        expect_short_read(
-            ElementType::ByteString(ElementDataLength::Bytes4),
-            &[2,0,0,0,0],
+            &[2, 0, 0, 0, 0],
         );
     }
 }
