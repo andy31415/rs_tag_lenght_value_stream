@@ -22,7 +22,9 @@ pub enum Value<'a> {
 
 /// Represents a split out tag value.
 ///
-/// The tags are split out as 3 items: vendor id, profile id and actual tag.
+/// For a full representation, tags are split out as 3 items: vendor id, profile id and actual tag.
+///
+/// There is a separate breakdown for implicit, context specific and anonymous cases.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TagValue {
     Anonymous,
