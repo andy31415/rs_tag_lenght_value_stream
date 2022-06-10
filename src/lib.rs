@@ -59,7 +59,11 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 }
 
 /// Provides the ability to parse TLV data into underlying types.
+/// 
+/// # Examples
 ///
+/// Parsing a valid stream:
+/// 
 /// ```
 /// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
 ///
@@ -95,6 +99,28 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 ///
 /// assert_eq!(parser.next(), None);
 /// assert!(parser.done());
+/// ```
+/// 
+/// Parsing an invalid stream (tag terminated early)
+/// 
+/// ```
+/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
+///
+/// let mut parser = Parser::new(&[
+///     0xD5, 0xBB, 0xAA, 0xDD, 0xCC, 0x01, 0x00,  // tag: 0xAABB/0xCCDD/1, structure start
+///     0x82, 0xcd,                                // tag: implicit tag 0x??cd<truncated> (no tag, no signed data)
+/// ]);
+///
+/// assert_eq!(parser.next(), Some(
+///         Record {
+///             tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
+///             value: Value::ContainerStart(ContainerType::Structure)
+///         },
+/// ));
+/// assert!(!parser.done());
+///
+/// assert_eq!(parser.next(), None);
+/// assert!(!parser.done());  // Parser NOT done as input data still available, but cannot be parsed
 /// ```
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -263,6 +289,14 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Iterating over a Parser means getting the underlying TLV data entries
+/// from the stream.
+/// 
+/// Iteration will return None if the stream is exhaused OR if the stream
+/// encountered a parsing error.
+/// 
+/// If None is returned due to a parsing error, then `done` will return false
+/// even though `next()` returned None.
 impl<'a> Iterator for Parser<'a> {
     type Item = Record<'a>;
 
