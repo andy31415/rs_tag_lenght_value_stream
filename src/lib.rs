@@ -195,15 +195,15 @@ impl<'a> Iterator for Parser<'a> {
                 let rest = result.remaining_input;
 
                 let value_type = ElementType::for_control(*control)?;
-                
+
                 let value = Parser::read_value(value_type, rest)?;
-                
+
                 self.data = value.remaining_input;
 
                 Some(Self::Item {
                     tag_type,
                     tag_value,
-                    value: value.parsed
+                    value: value.parsed,
                 })
             }
         }
@@ -549,6 +549,34 @@ mod tests {
         // Strings
         check_value_read(
             ElementType::Utf8String(ElementDataLength::Bytes1),
+            &[0x00],
+            Value::Utf8(&[]),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Utf8String(ElementDataLength::Bytes1),
+            &[0x00, 0x01],
+            Value::Utf8(&[]),
+            &[0x01],
+        );
+
+        check_value_read(
+            ElementType::Utf8String(ElementDataLength::Bytes2),
+            &[0x00, 0x00],
+            Value::Utf8(&[]),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Utf8String(ElementDataLength::Bytes2),
+            &[0x01, 0x00, 0x41, 0x42],
+            Value::Utf8(&[0x41]),
+            &[0x42],
+        );
+
+        check_value_read(
+            ElementType::Utf8String(ElementDataLength::Bytes1),
             &[0x02, 0x41, 0x42, 0x11, 0x22, 0x33],
             Value::Utf8(&[0x41, 0x42]),
             &[0x11, 0x22, 0x33],
@@ -560,6 +588,13 @@ mod tests {
             &[0x04, 0x01, 0x02, 0x00, 0xFF, 0x11, 0x22, 0x33],
             Value::Bytes(&[0x01, 0x02, 0x00, 0xFF]),
             &[0x11, 0x22, 0x33],
+        );
+
+        check_value_read(
+            ElementType::ByteString(ElementDataLength::Bytes4),
+            &[0x02, 0x00, 0x00, 0x00, 0xFF, 0x11, 0x22, 0x33],
+            Value::Bytes(&[0xFF, 0x11]),
+            &[0x22, 0x33],
         );
     }
 
@@ -612,6 +647,13 @@ mod tests {
             ElementType::Utf8String(ElementDataLength::Bytes1),
             &[3, 1, 2],
         );
+        expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes2), &[]);
+        expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes2), &[0]);
+        expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes2), &[1, 0]);
+        expect_short_read(
+            ElementType::Utf8String(ElementDataLength::Bytes2),
+            &[0, 1, 1],
+        ); // 256 length string
 
         expect_short_read(ElementType::ByteString(ElementDataLength::Bytes1), &[]);
         expect_short_read(ElementType::ByteString(ElementDataLength::Bytes1), &[1]);
@@ -620,6 +662,22 @@ mod tests {
         expect_short_read(
             ElementType::ByteString(ElementDataLength::Bytes1),
             &[3, 1, 2],
+        );
+        expect_short_read(
+            ElementType::ByteString(ElementDataLength::Bytes4),
+            &[1],
+        );
+        expect_short_read(
+            ElementType::ByteString(ElementDataLength::Bytes4),
+            &[1,0,0],
+        );
+        expect_short_read(
+            ElementType::ByteString(ElementDataLength::Bytes4),
+            &[1,0,0,0],
+        );
+        expect_short_read(
+            ElementType::ByteString(ElementDataLength::Bytes4),
+            &[2,0,0,0,0],
         );
     }
 }
