@@ -20,12 +20,29 @@ pub enum Value<'a> {
     ContainerEnd,
 }
 
+/// Represents a split out tag value.
+///
+/// The tags are split out as 3 items: vendor id, profile id and actual tag.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum TagValue {
+    Anonymous,
+    ContextSpecific {
+        tag: u32,
+    },
+    Implicit {
+        tag: u32,
+    },
+    Full {
+        vendor_id: u16,
+        profile_id: u16,
+        tag: u32,
+    },
+}
+
 /// Represents a data record read from a TLV stream
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Record<'a> {
-    pub tag_type: TagType,
-    pub tag_value: u64, // fully expanded 8-byte value
-
+    pub tag: TagValue,
     pub value: Value<'a>,
 }
 
@@ -60,8 +77,8 @@ impl<'a> Parser<'a> {
     pub(crate) fn read_tag_value(
         tag_type: TagType,
         data: &[u8],
-    ) -> Option<IncrementalParseResult<u64>> {
-        let tag_length = match tag_type {
+    ) -> Option<IncrementalParseResult<TagValue>> {
+        let mut tag_length = match tag_type {
             TagType::Anonymous => 0,
             TagType::ContextSpecific1byte => 1,
             TagType::Implicit2byte | TagType::CommonProfile2byte => 2,
@@ -75,10 +92,32 @@ impl<'a> Parser<'a> {
             return None;
         }
 
-        let (buf, remaining_input) = data.split_at(tag_length);
-        let parsed = match tag_length {
-            0 => 0u64,
-            nbytes => LittleEndian::read_uint(buf, nbytes),
+        let (tag_buffer, remaining_input) = data.split_at(tag_length);
+
+        // we know we have sufficient size to parse, do the parsing
+        let parsed = match tag_type {
+            TagType::Anonymous => TagValue::Anonymous,
+            TagType::ContextSpecific1byte => TagValue::ContextSpecific {
+                tag: tag_buffer[0] as u32,
+            },
+            TagType::Implicit2byte | TagType::Implicit4byte => TagValue::Implicit {
+                tag: LittleEndian::read_uint(tag_buffer, tag_length) as u32,
+            },
+            TagType::CommonProfile2byte | TagType::CommonProfile4byte => TagValue::Full {
+                vendor_id: 0,
+                profile_id: 0,
+                tag: LittleEndian::read_uint(tag_buffer, tag_length) as u32,
+            },
+            TagType::FullyQualified6byte => TagValue::Full {
+                vendor_id: LittleEndian::read_u16(tag_buffer),
+                profile_id: LittleEndian::read_u16(&tag_buffer[2..4]),
+                tag: LittleEndian::read_u16(&tag_buffer[4..6]) as u32,
+            },
+            TagType::FullyQualified8byte => TagValue::Full {
+                vendor_id: LittleEndian::read_u16(tag_buffer),
+                profile_id: LittleEndian::read_u16(&tag_buffer[2..4]),
+                tag: LittleEndian::read_u32(&tag_buffer[4..8]),
+            },
         };
 
         Some(IncrementalParseResult {
@@ -192,7 +231,7 @@ impl<'a> Iterator for Parser<'a> {
 
                 let result = Parser::read_tag_value(tag_type, rest)?;
 
-                let tag_value = result.parsed;
+                let tag = result.parsed;
                 let rest = result.remaining_input;
 
                 let value_type = ElementType::for_control(*control)?;
@@ -202,8 +241,7 @@ impl<'a> Iterator for Parser<'a> {
                 self.data = value.remaining_input;
 
                 Some(Self::Item {
-                    tag_type,
-                    tag_value,
+                    tag,
                     value: value.parsed,
                 })
             }
@@ -223,8 +261,8 @@ mod tests {
         let empty = [].as_slice();
         assert_eq!(
             Parser::read_tag_value(TagType::Anonymous, empty),
-            Some(IncrementalParseResult {
-                parsed: 0,
+            Some(IncrementalParseResult{
+                parsed: TagValue::Anonymous,
                 remaining_input: empty
             })
         );
@@ -233,7 +271,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::Anonymous, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0,
+                parsed: TagValue::Anonymous,
                 remaining_input: some_bytes
             })
         );
@@ -241,7 +279,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::ContextSpecific1byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0x01,
+                parsed: TagValue::ContextSpecific { tag: 1 },
                 remaining_input: [2, 3, 4, 5, 6, 7, 8, 9, 10].as_slice()
             })
         );
@@ -249,7 +287,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile2byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0x0201,
+                parsed: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 0x0201 },
                 remaining_input: [3, 4, 5, 6, 7, 8, 9, 10].as_slice()
             })
         );
@@ -257,7 +295,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::Implicit2byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0x0201,
+                parsed: TagValue::Implicit { tag: 0x0201 },
                 remaining_input: [3, 4, 5, 6, 7, 8, 9, 10].as_slice()
             })
         );
@@ -265,7 +303,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::Implicit4byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0x04030201,
+                parsed: TagValue::Implicit { tag: 0x04030201 },
                 remaining_input: [5, 6, 7, 8, 9, 10].as_slice()
             })
         );
@@ -273,7 +311,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile4byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0x04030201,
+                parsed: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 0x04030201 },
                 remaining_input: [5, 6, 7, 8, 9, 10].as_slice()
             })
         );
@@ -281,7 +319,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified6byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0x060504030201,
+                parsed: TagValue::Full { vendor_id: 0x0201, profile_id: 0x0403, tag: 0x0605 },
                 remaining_input: [7, 8, 9, 10].as_slice()
             })
         );
@@ -289,7 +327,7 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified8byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: 0x0807060504030201,
+                parsed: TagValue::Full { vendor_id: 0x0201, profile_id: 0x0403, tag: 0x08070605 },
                 remaining_input: [9, 10].as_slice()
             })
         );
@@ -698,13 +736,11 @@ mod tests {
         let mut parser = Parser::new(buffer);
         let expected = [
             Record {
-                tag_type: TagType::Anonymous,
-                tag_value: 0,
+                tag: TagValue::Anonymous,
                 value: Value::Signed(0x7c),
             },
             Record {
-                tag_type: TagType::Anonymous,
-                tag_value: 0,
+                tag: TagValue::Anonymous,
                 value: Value::Unsigned(0x2211),
             },
         ];
@@ -717,8 +753,7 @@ mod tests {
 
     fn anonymous(value: Value) -> Record {
         Record {
-            tag_type: TagType::Anonymous,
-            tag_value: 0,
+            tag: TagValue::Anonymous,
             value,
         }
     }
@@ -760,23 +795,19 @@ mod tests {
         let mut parser = Parser::new(buffer);
         let expected = [
             Record {
-                tag_type: TagType::FullyQualified6byte,
-                tag_value: 0x01AABBCCDD,
+                tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
                 value: Value::ContainerStart(ContainerType::Structure)
             },
             Record {
-                tag_type: TagType::FullyQualified6byte,
-                tag_value: 0x02AABBCCDD,
+                tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 2 },
                 value: Value::Bool(true)
             },
             Record {
-                tag_type: TagType::Implicit2byte,
-                tag_value: 2,
+                tag: TagValue::Implicit { tag: 2 },
                 value: Value::Bool(false)
             },
             Record {
-                tag_type: TagType::ContextSpecific1byte,
-                tag_value: 0,
+                tag: TagValue::ContextSpecific { tag: 0 },
                 value: Value::ContainerStart(ContainerType::Array)
             },
             anonymous(Value::Signed(42)),
@@ -787,24 +818,20 @@ mod tests {
             anonymous(Value::ContainerEnd),
             anonymous(Value::ContainerStart(ContainerType::List)),
             Record {
-                tag_type: TagType::FullyQualified6byte,
-                tag_value: 0x11AABBCCDD,
+                tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 17 },
                 value: Value::Null,
             },
             Record {
-                tag_type: TagType::Implicit4byte,
-                tag_value: 900000,
+                tag: TagValue::Implicit { tag: 900000 },
                 value: Value::Null,
             },
             anonymous(Value::Null),
             Record {
-                tag_type: TagType::Implicit4byte,
-                tag_value: 4000000000,
+                tag: TagValue::Implicit { tag: 4000000000 },
                 value: Value::ContainerStart(ContainerType::Structure)
             },
             Record {
-                tag_type: TagType::Implicit4byte,
-                tag_value: 70000,
+                tag: TagValue::Implicit { tag: 70000 },
                 value: Value::Utf8(
                     "START...!123456789ABCDEF#123456789ABCDEF#123456789ABCDEF$123456789ABCDEF%123456789ABCDEF^123456789ABCDEF&123456789ABCDEF*123456789ABCDEF01234567(9ABCDEF01234567)9ABCDEF01234567-9ABCDEF01234567=9ABCDEF01234567[9ABCDEF01234567]9ABCDEF01234567;9ABCDEF01234567\'9ABCDEF".as_bytes())
             },
@@ -812,18 +839,15 @@ mod tests {
             anonymous(Value::ContainerEnd),
             anonymous(Value::ContainerEnd),
             Record {
-                tag_type: TagType::FullyQualified6byte,
-                tag_value: 0x5AABBCCDD,
+                tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 5 },
                 value: Value::Utf8("This is a test".as_bytes())
             },
             Record {
-                tag_type: TagType::Implicit2byte,
-                tag_value: 65535,
+                tag: TagValue::Implicit { tag: 65535 },
                 value: Value::Float(17.9)
             },
             Record {
-                tag_type: TagType::Implicit4byte,
-                tag_value: 65535,
+                tag: TagValue::Implicit { tag: 65535 },
                 value: Value::Double(17.9)
             },
             anonymous(Value::ContainerEnd),
