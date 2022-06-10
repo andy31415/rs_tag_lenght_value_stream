@@ -498,6 +498,35 @@ mod tests {
             Value::Signed(-2),
             &[0x05, 0x06, 0x07, 0x08, 0x09],
         );
+        
+        // Floating point number tests
+        check_value_read(
+            ElementType::Float,
+            &[0x0, 0x0, 0x0, 0x0, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Float(0_f32),
+            &[0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Float,
+            &[0x0, 0x0, 0xf6, 0x42, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Float(123_f32),
+            &[0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Double,
+            &[0x0, 0x0, 0x0, 0x0, 0x00, 0x00, 0x00, 0x00, 0x09],
+            Value::Double(0_f64),
+            &[0x09],
+        );
+
+        check_value_read(
+            ElementType::Double,
+            &[0x0, 0x0, 0x00, 0x00, 0x00, 0xc0, 0x5e, 0x40, 0x09],
+            Value::Double(123_f64),
+            &[0x09],
+        );
 
         /*
             ElementType::Float => {
