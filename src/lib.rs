@@ -2,8 +2,10 @@
 
 pub mod raw_types;
 
+pub use raw_types::ContainerType;
+
 use byteorder::{ByteOrder, LittleEndian};
-use raw_types::{ContainerType, ElementType, TagType};
+use raw_types::{ElementType, TagType};
 
 /// Represents an actual value read from a TLV record
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -56,6 +58,30 @@ pub(crate) struct IncrementalParseResult<'a, T> {
     pub(crate) remaining_input: &'a [u8],
 }
 
+/// Provides the ability to parse TLV data into underlying types.
+/// 
+/// ```
+/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
+/// 
+/// let mut parser = Parser::new(&[
+///     0xD5, 0xBB, 0xAA, 0xDD, 0xCC, 0x01, 0x00,  // structure start: 0xAABB/0xCCDD/1
+///     // FIXME: add more
+///     0x18  // container end
+/// ]);
+/// 
+/// assert_eq!(parser.next(), Some(
+///         Record {
+///             tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
+///             value: Value::ContainerStart(ContainerType::Structure)
+///         },
+/// ));
+/// assert!(!parser.done());
+/// assert_eq!(parser.next(), Some(Record { tag: TagValue::Anonymous, value: Value::ContainerEnd}));
+/// assert!(parser.done());
+///
+/// assert_eq!(parser.next(), None);
+/// assert!(parser.done());
+/// ```
 #[derive(Debug)]
 pub struct Parser<'a> {
     data: &'a [u8],
