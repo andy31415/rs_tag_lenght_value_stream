@@ -694,9 +694,9 @@ mod tests {
     #[test]
     fn parsing_from_u8_buffer() {
         let buffer = [0x00, 0x7c, 0b0000_0101, 0x11, 0x22].as_slice();
-
-        assert_eq!(
-            Parser::new(buffer).eq([
+        
+        let mut parser = Parser::new(buffer);
+        let expected = [
                 Record {
                     tag_type: TagType::Anonymous,
                     tag_value: 0,
@@ -707,8 +707,11 @@ mod tests {
                     tag_value: 0,
                     value: Value::Unsigned(0x2211)
                 }
-            ]),
-            true
-        );
+        ];
+        
+        for value in expected {
+            assert_eq!(parser.next(), Some(value));
+        }
+        assert!(parser.done());
     }
 }
