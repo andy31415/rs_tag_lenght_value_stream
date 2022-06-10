@@ -195,6 +195,8 @@ impl<'a> Iterator for Parser<'a> {
 ///
 #[cfg(test)]
 mod tests {
+    use crate::types::ElementDataLength;
+
     use super::*;
 
     #[test]
@@ -354,6 +356,13 @@ mod tests {
             check_value_read(in_type, &[], out_type, &[]);
             check_value_read(in_type, &[1, 2, 3], out_type, &[1, 2, 3]);
         }
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes1),
+            &[0x01],
+            Value::Unsigned(0x01),
+            &[],
+        );
 
         /*
             ElementType::Signed(n) => {
