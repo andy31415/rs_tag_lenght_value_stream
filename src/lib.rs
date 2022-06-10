@@ -80,7 +80,7 @@ impl<'a> Parser<'a> {
         tag_type: TagType,
         data: &[u8],
     ) -> Option<IncrementalParseResult<TagValue>> {
-        let mut tag_length = match tag_type {
+        let tag_length = match tag_type {
             TagType::Anonymous => 0,
             TagType::ContextSpecific1byte => 1,
             TagType::Implicit2byte | TagType::CommonProfile2byte => 2,
