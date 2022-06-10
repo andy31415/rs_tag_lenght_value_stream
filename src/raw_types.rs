@@ -115,7 +115,12 @@ impl ElementType {
     /// Returns true if the data for this tag contains a size.
     ///
     /// Specifically utf8 and byte strings are encoded as:
-    /// [control 1-byte] [tag 0-8-bytes] [length-1-4-bytes] [data]
+    ///
+    /// ```text
+    /// +----------------+   +---------------+   +------------------+   +-------------------+
+    /// |control (1-byte)|   |tag (0-8 bytes)|   |length (1-4 bytes)|   |data (length bytes)|
+    /// +----------------+   +---------------+   +------------------+   +-------------------+
+    /// ```
     /// 
     /// Note that container types (structs, lists) are not sized and instead
     /// use an 'end of container' tag to delimit them.
