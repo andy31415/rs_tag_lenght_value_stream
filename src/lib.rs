@@ -137,19 +137,20 @@ impl<'a> Parser<'a> {
             }
             ElementType::Utf8String(data_len) | ElementType::ByteString(data_len) => {
                 let length_parsing = Parser::read_value(ElementType::Unsigned(data_len), data)?;
-                
+
                 let data_len = match length_parsing.parsed {
                     Value::Unsigned(n) => n,
                     _ => return None,
                 };
-                
+
                 if data_len > length_parsing.remaining_input.len() as u64 {
                     // String too short
                     return None;
                 }
-                
-                let (value, remaining_input) = length_parsing.remaining_input.split_at(data_len as usize);
-                
+
+                let (value, remaining_input) =
+                    length_parsing.remaining_input.split_at(data_len as usize);
+
                 let parsed = {
                     if let ElementType::Utf8String(_) = element_type {
                         Value::Utf8(value)
@@ -157,8 +158,11 @@ impl<'a> Parser<'a> {
                         Value::Bytes(value)
                     }
                 };
-                
-                Some(IncrementalParseResult { parsed, remaining_input})
+
+                Some(IncrementalParseResult {
+                    parsed,
+                    remaining_input,
+                })
             }
             ElementType::Null => Some(IncrementalParseResult {
                 parsed: Value::Null,
@@ -562,10 +566,47 @@ mod tests {
             Value::Bytes(&[0x01, 0x02, 0x00, 0xFF]),
             &[0x11, 0x22, 0x33],
         );
+    }
 
-        /*
-            ElementType::Utf8String(_) => todo!(),
-            ElementType::ByteString(_) => todo!(),
-        */
+    fn expect_short_read(in_type: ElementType, in_data: &[u8]) {
+        assert_eq!(
+            Parser::read_value(in_type, in_data),
+            None,
+            "Expecting {:?}/{:?} to be short read (value is None)",
+            in_type,
+            in_data,
+        );
+    }
+
+    #[test]
+    fn short_value_reads() {
+        expect_short_read(ElementType::Unsigned(ElementDataLength::Bytes1), &[]);
+
+        expect_short_read(ElementType::Unsigned(ElementDataLength::Bytes2), &[]);
+        expect_short_read(ElementType::Unsigned(ElementDataLength::Bytes2), &[0x01]);
+
+        expect_short_read(ElementType::Unsigned(ElementDataLength::Bytes4), &[]);
+        expect_short_read(
+            ElementType::Unsigned(ElementDataLength::Bytes4),
+            &[0x01, 0x02],
+        );
+        expect_short_read(
+            ElementType::Unsigned(ElementDataLength::Bytes4),
+            &[0x01, 0x02, 0x03],
+        );
+
+        expect_short_read(ElementType::Unsigned(ElementDataLength::Bytes8), &[]);
+        expect_short_read(
+            ElementType::Unsigned(ElementDataLength::Bytes8),
+            &[0x01, 0x02],
+        );
+        expect_short_read(
+            ElementType::Unsigned(ElementDataLength::Bytes8),
+            &[0x01, 0x02, 0x03],
+        );
+        expect_short_read(
+            ElementType::Unsigned(ElementDataLength::Bytes8),
+            &[1, 2, 3, 4, 5, 6, 7],
+        );
     }
 }
