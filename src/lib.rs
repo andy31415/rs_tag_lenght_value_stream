@@ -788,8 +788,8 @@ mod tests {
             0x42, 0x43, 0x44, 0x45, 0x46, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x27,
             0x39, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x2E, 0x2E, 0x2E, 0x45, 0x4E, 0x44, 0x18,
             0x18, 0x18, 0xCC, 0xBB, 0xAA, 0xDD, 0xCC, 0x05, 0x00, 0x0E, 0x54, 0x68, 0x69, 0x73,
-            0x20, 0x69, 0x73, 0x20, 0x61, 0x20, 0x74, 0x65, 0x73, 0x74, 0x8A, 0xFF, 0xFF, 0x33,
-            0x33, 0x8F, 0x41, 0xAB, 0x00, 0x00, 0x01, 0x00, 0x66, 0x66, 0x66, 0x66, 0x66, 0xE6,
+            0x20, 0x69, 0x73, 0x20, 0x61, 0x20, 0x74, 0x65, 0x73, 0x74, 0x8A, 0xFF, 0xFF, 0x00,
+            0x00, 0x88, 0x41, 0xAB, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x31, 0x40, 0x18,
         ]
         .as_slice();
@@ -833,9 +833,9 @@ mod tests {
                 value: Value::ContainerStart(ContainerType::Structure)
             },
             Record {
-                tag: TagValue::Implicit { tag: 70000 },
+                tag: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 70000},
                 value: Value::Utf8(
-                    "START...!123456789ABCDEF#123456789ABCDEF#123456789ABCDEF$123456789ABCDEF%123456789ABCDEF^123456789ABCDEF&123456789ABCDEF*123456789ABCDEF01234567(9ABCDEF01234567)9ABCDEF01234567-9ABCDEF01234567=9ABCDEF01234567[9ABCDEF01234567]9ABCDEF01234567;9ABCDEF01234567\'9ABCDEF".as_bytes())
+                    "START...!123456789ABCDEF@123456789ABCDEF#123456789ABCDEF$123456789ABCDEF%123456789ABCDEF^123456789ABCDEF&123456789ABCDEF*123456789ABCDEF01234567(9ABCDEF01234567)9ABCDEF01234567-9ABCDEF01234567=9ABCDEF01234567[9ABCDEF01234567]9ABCDEF01234567;9ABCDEF01234567'9ABCDEF...END".as_bytes())
             },
             anonymous(Value::ContainerEnd),
             anonymous(Value::ContainerEnd),
@@ -846,11 +846,11 @@ mod tests {
             },
             Record {
                 tag: TagValue::Implicit { tag: 65535 },
-                value: Value::Float(17.9)
+                value: Value::Float(17.0)
             },
             Record {
-                tag: TagValue::Implicit { tag: 65535 },
-                value: Value::Double(17.9)
+                tag: TagValue::Implicit { tag: 65536 },
+                value: Value::Double(17.0)
             },
             anonymous(Value::ContainerEnd),
         ];
