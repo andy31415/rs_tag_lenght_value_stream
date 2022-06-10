@@ -132,11 +132,7 @@ impl ElementType {
     /// assert!(!ElementType::ContainerEnd.is_sized_data());
     /// ```
     pub fn is_sized_data(&self) -> bool {
-        match self {
-            ElementType::Utf8String(_) => true,
-            ElementType::ByteString(_) => true,
-            _ => false,
-        }
+        matches!(self, ElementType::Utf8String(_) | ElementType::ByteString(_))
     }
 
     /// Extracts the element type from a control byte.
@@ -201,7 +197,7 @@ pub enum TagType {
 }
 
 impl TagType {
-    const CONTROL_BITS: u8 = 0b111_00000;
+    const CONTROL_BITS: u8 = 0b1110_0000;
     const SHIFT: u8 = 5;
 
     fn get_control_byte_bits(&self) -> u8 {

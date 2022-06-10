@@ -93,7 +93,7 @@ impl<'a> Parser<'a> {
         match element_type {
             ElementType::Unsigned(n) | ElementType::Signed(n) => {
                 let value_len = match n {
-                    types::ElementDataLength::Bytes1 if data.len() >= 1 => 1,
+                    types::ElementDataLength::Bytes1 if !data.is_empty() => 1,
                     types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
                     types::ElementDataLength::Bytes4 if data.len() >= 4 => 4,
                     types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
@@ -195,20 +195,15 @@ impl<'a> Iterator for Parser<'a> {
                 let rest = result.remaining_input;
 
                 let value_type = ElementType::for_control(*control)?;
-
-                // FIXME: read actual value
-
-                // FIXME:
-                //   read value (if applicable: integers or byte strings or something)
-
-                // FIXME
-
-                self.data = rest;
+                
+                let value = Parser::read_value(value_type, rest)?;
+                
+                self.data = value.remaining_input;
 
                 Some(Self::Item {
                     tag_type,
                     tag_value,
-                    value: Value::Null, // FIXME: implement
+                    value: value.parsed
                 })
             }
         }
@@ -607,6 +602,15 @@ mod tests {
         expect_short_read(
             ElementType::Unsigned(ElementDataLength::Bytes8),
             &[1, 2, 3, 4, 5, 6, 7],
+        );
+
+        expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes1), &[]);
+        expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes1), &[1]);
+        expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes1), &[2, 1]);
+        expect_short_read(ElementType::Utf8String(ElementDataLength::Bytes1), &[3, 1]);
+        expect_short_read(
+            ElementType::Utf8String(ElementDataLength::Bytes1),
+            &[3, 1, 2],
         );
     }
 }
