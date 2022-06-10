@@ -37,6 +37,7 @@ pub(crate) struct IncrementalParseResult<'a, T> {
     pub(crate) remaining_input: &'a [u8],
 }
 
+#[derive(Debug)]
 pub struct Parser<'a> {
     data: &'a [u8],
 }
@@ -640,12 +641,12 @@ mod tests {
         );
 
         expect_short_read(ElementType::Float, &[]);
-        expect_short_read(ElementType::Float, &[1,]);
+        expect_short_read(ElementType::Float, &[1]);
         expect_short_read(ElementType::Float, &[1, 2]);
         expect_short_read(ElementType::Float, &[1, 2, 3]);
 
         expect_short_read(ElementType::Double, &[]);
-        expect_short_read(ElementType::Double, &[1,]);
+        expect_short_read(ElementType::Double, &[1]);
         expect_short_read(ElementType::Double, &[1, 2]);
         expect_short_read(ElementType::Double, &[1, 2, 3]);
         expect_short_read(ElementType::Double, &[1, 2, 3, 4]);
@@ -687,6 +688,27 @@ mod tests {
         expect_short_read(
             ElementType::ByteString(ElementDataLength::Bytes4),
             &[2, 0, 0, 0, 0],
+        );
+    }
+
+    #[test]
+    fn parsing_from_u8_buffer() {
+        let buffer = [0x00, 0x7c, 0b0000_0101, 0x11, 0x22].as_slice();
+
+        assert_eq!(
+            Parser::new(buffer).eq([
+                Record {
+                    tag_type: TagType::Anonymous,
+                    tag_value: 0,
+                    value: Value::Signed(0x7c),
+                },
+                Record {
+                    tag_type: TagType::Anonymous,
+                    tag_value: 0,
+                    value: Value::Unsigned(0x2211)
+                }
+            ]),
+            true
         );
     }
 }
