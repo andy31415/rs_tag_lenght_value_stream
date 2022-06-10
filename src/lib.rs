@@ -1,9 +1,9 @@
 #![no_std]
 
-pub mod types;
+pub mod raw_types;
 
 use byteorder::{ByteOrder, LittleEndian};
-use types::{ContainerType, ElementType, TagType};
+use raw_types::{ContainerType, ElementType, TagType};
 
 /// Represents an actual value read from a TLV record
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -136,10 +136,10 @@ impl<'a> Parser<'a> {
         match element_type {
             ElementType::Unsigned(n) | ElementType::Signed(n) => {
                 let value_len = match n {
-                    types::ElementDataLength::Bytes1 if !data.is_empty() => 1,
-                    types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
-                    types::ElementDataLength::Bytes4 if data.len() >= 4 => 4,
-                    types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
+                    raw_types::ElementDataLength::Bytes1 if !data.is_empty() => 1,
+                    raw_types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
+                    raw_types::ElementDataLength::Bytes4 if data.len() >= 4 => 4,
+                    raw_types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
                     _ => return None, // insufficient buffer space
                 };
 
@@ -250,7 +250,7 @@ impl<'a> Iterator for Parser<'a> {
 ///
 #[cfg(test)]
 mod tests {
-    use crate::types::ElementDataLength;
+    use crate::raw_types::ElementDataLength;
 
     use super::*;
 
