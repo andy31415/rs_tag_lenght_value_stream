@@ -6,6 +6,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use types::{ContainerType, ElementType, TagType};
 
 /// Represents an actual value read from a TLV record
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Value<'a> {
     Signed(i64),
     Unsigned(u64),
@@ -20,6 +21,7 @@ pub enum Value<'a> {
 }
 
 /// Represents a data record read from a TLV stream
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Record<'a> {
     pub tag_type: TagType,
     pub tag_value: u64, // fully expanded 8-byte value
@@ -86,8 +88,72 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn read_value(
         element_type: ElementType,
+        data: &'a [u8],
     ) -> Option<IncrementalParseResult<'a, Value<'a>>> {
-        todo!()
+        match element_type {
+            ElementType::Signed(n) => {
+                let value_len = match n {
+                    types::ElementDataLength::Bytes1 if data.len() >= 1 => 1,
+                    types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
+                    types::ElementDataLength::Bytes4 if data.len() >= 4 => 4,
+                    types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
+                    _ => return None, // insufficient buffer space
+                };
+                Some(IncrementalParseResult {
+                    parsed: Value::Unsigned(LittleEndian::read_uint(data, value_len)),
+                    remaining_input: data.split_at(value_len).1,
+                })
+            }
+            ElementType::Unsigned(n) => {
+                let value_len = match n {
+                    types::ElementDataLength::Bytes1 if data.len() >= 1 => 1,
+                    types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
+                    types::ElementDataLength::Bytes4 if data.len() >= 4 => 4,
+                    types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
+                    _ => return None, // insufficient buffer space
+                };
+                Some(IncrementalParseResult {
+                    parsed: Value::Signed(LittleEndian::read_int(data, value_len)),
+                    remaining_input: data.split_at(value_len).1,
+                })
+            }
+            ElementType::Boolean(v) => Some(IncrementalParseResult {
+                parsed: Value::Bool(v),
+                remaining_input: data,
+            }),
+            ElementType::Float => {
+                if data.len() < 4 {
+                    return None;
+                }
+                Some(IncrementalParseResult {
+                    parsed: Value::Float(LittleEndian::read_f32(data)),
+                    remaining_input: data.split_at(4).1,
+                })
+            }
+            ElementType::Double => {
+                if data.len() < 4 {
+                    return None;
+                }
+                Some(IncrementalParseResult {
+                    parsed: Value::Double(LittleEndian::read_f64(data)),
+                    remaining_input: data.split_at(8).1,
+                })
+            }
+            ElementType::Utf8String(_) => todo!(),
+            ElementType::ByteString(_) => todo!(),
+            ElementType::Null => Some(IncrementalParseResult {
+                parsed: Value::Null,
+                remaining_input: data,
+            }),
+            ElementType::ContainerStart(t) => Some(IncrementalParseResult {
+                parsed: Value::ContainerStart(t),
+                remaining_input: data,
+            }),
+            ElementType::ContainerEnd => Some(IncrementalParseResult {
+                parsed: Value::ContainerEnd,
+                remaining_input: data,
+            }),
+        }
     }
 }
 
@@ -246,5 +312,56 @@ mod tests {
             Parser::read_tag_value(TagType::FullyQualified8byte, four_bytes),
             None
         );
+    }
+
+    fn check_value_read(in_type: ElementType, in_data: &[u8], out_type: Value, out_data: &[u8]) {
+        assert_eq!(
+            Parser::read_value(in_type, in_data),
+            Some(IncrementalParseResult {
+                parsed: out_type,
+                remaining_input: out_data
+            }),
+            "Expecting {:?}/{:?} to parse to {:?}/{:?}",
+            in_type,
+            in_data,
+            out_type,
+            out_data,
+        );
+    }
+
+    #[test]
+    fn it_reads_values() {
+        let empty_element_types = [
+            (ElementType::Null, Value::Null),
+            (ElementType::ContainerEnd, Value::ContainerEnd),
+            (
+                ElementType::ContainerStart(ContainerType::Array),
+                Value::ContainerStart(ContainerType::Array),
+            ),
+            (
+                ElementType::ContainerStart(ContainerType::List),
+                Value::ContainerStart(ContainerType::List),
+            ),
+            (
+                ElementType::ContainerStart(ContainerType::Structure),
+                Value::ContainerStart(ContainerType::Structure),
+            ),
+            (ElementType::Boolean(true), Value::Bool(true)),
+            (ElementType::Boolean(false), Value::Bool(false)),
+        ];
+
+        for (in_type, out_type) in empty_element_types {
+            check_value_read(in_type, &[], out_type, &[]);
+            check_value_read(in_type, &[1, 2, 3], out_type, &[1, 2, 3]);
+        }
+
+        /*
+            ElementType::Signed(n) => {
+            ElementType::Unsigned(n) => {
+            ElementType::Float => {
+            ElementType::Double => {
+            ElementType::Utf8String(_) => todo!(),
+            ElementType::ByteString(_) => todo!(),
+        */
     }
 }
