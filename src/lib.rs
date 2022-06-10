@@ -69,6 +69,7 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 ///     0x34, 0x10,  // context specific tag 16, null
 ///     0x28, 0x02,  // context specific tag 2, false
 ///     0x29, 0x03,  // context specific tag 3, true
+///     0x85, 0x22, 0x11, 0x34, 0x12,  // Implicit provfile tag 0x1122, unsigned 0x1234
 ///     0x18  // anonymous tag, container end
 /// ]);
 /// 
@@ -84,6 +85,7 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 /// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 16}, value: Value::Null}));
 /// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 2}, value: Value::Bool(false)}));
 /// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 3}, value: Value::Bool(true)}));
+/// assert_eq!(parser.next(), Some(Record { tag: TagValue::Implicit{tag: 0x1122}, value: Value::Unsigned(0x1234)}));
 /// 
 /// 
 /// assert_eq!(parser.next(), Some(Record { tag: TagValue::Anonymous, value: Value::ContainerEnd}));
