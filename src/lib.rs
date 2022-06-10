@@ -612,5 +612,14 @@ mod tests {
             ElementType::Utf8String(ElementDataLength::Bytes1),
             &[3, 1, 2],
         );
+
+        expect_short_read(ElementType::ByteString(ElementDataLength::Bytes1), &[]);
+        expect_short_read(ElementType::ByteString(ElementDataLength::Bytes1), &[1]);
+        expect_short_read(ElementType::ByteString(ElementDataLength::Bytes1), &[2, 1]);
+        expect_short_read(ElementType::ByteString(ElementDataLength::Bytes1), &[3, 1]);
+        expect_short_read(
+            ElementType::ByteString(ElementDataLength::Bytes1),
+            &[3, 1, 2],
+        );
     }
 }
