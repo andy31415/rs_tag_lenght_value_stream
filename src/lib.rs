@@ -64,9 +64,12 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 /// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
 /// 
 /// let mut parser = Parser::new(&[
-///     0xD5, 0xBB, 0xAA, 0xDD, 0xCC, 0x01, 0x00,  // structure start: 0xAABB/0xCCDD/1
-///     // FIXME: add more
-///     0x18  // container end
+///     0xD5, 0xBB, 0xAA, 0xDD, 0xCC, 0x01, 0x00,  // tag 0xAABB/0xCCDD/1, structure start
+///     0x34, 0x01,  // context specific tag 1, null
+///     0x34, 0x10,  // context specific tag 16, null
+///     0x28, 0x02,  // context specific tag 2, false
+///     0x29, 0x03,  // context specific tag 3, true
+///     0x18  // anonymous tag, container end
 /// ]);
 /// 
 /// assert_eq!(parser.next(), Some(
@@ -76,6 +79,13 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 ///         },
 /// ));
 /// assert!(!parser.done());
+/// 
+/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 1}, value: Value::Null}));
+/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 16}, value: Value::Null}));
+/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 2}, value: Value::Bool(false)}));
+/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 3}, value: Value::Bool(true)}));
+/// 
+/// 
 /// assert_eq!(parser.next(), Some(Record { tag: TagValue::Anonymous, value: Value::ContainerEnd}));
 /// assert!(parser.done());
 ///
