@@ -91,7 +91,7 @@ impl<'a> Parser<'a> {
         data: &'a [u8],
     ) -> Option<IncrementalParseResult<'a, Value<'a>>> {
         match element_type {
-            ElementType::Signed(n) => {
+            ElementType::Unsigned(n) => {
                 let value_len = match n {
                     types::ElementDataLength::Bytes1 if data.len() >= 1 => 1,
                     types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
                     remaining_input: data.split_at(value_len).1,
                 })
             }
-            ElementType::Unsigned(n) => {
+            ElementType::Signed(n) => {
                 let value_len = match n {
                     types::ElementDataLength::Bytes1 if data.len() >= 1 => 1,
                     types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
@@ -357,6 +357,7 @@ mod tests {
             check_value_read(in_type, &[1, 2, 3], out_type, &[1, 2, 3]);
         }
 
+        ///// Unsigned tests
         check_value_read(
             ElementType::Unsigned(ElementDataLength::Bytes1),
             &[0x01],
@@ -364,9 +365,141 @@ mod tests {
             &[],
         );
 
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes1),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Unsigned(0x01),
+            &[0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes2),
+            &[0x01, 0x02],
+            Value::Unsigned(0x0201),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes2),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Unsigned(0x0201),
+            &[0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes4),
+            &[0x01, 0x02, 0x03, 0x04],
+            Value::Unsigned(0x04030201),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes4),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Unsigned(0x04030201),
+            &[0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes8),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+            Value::Unsigned(0x0807060504030201),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes8),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Unsigned(0x0807060504030201),
+            &[0x09],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes2),
+            &[0xFF, 0xFF, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Unsigned(0xFFFF),
+            &[0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Unsigned(ElementDataLength::Bytes4),
+            &[0xFE, 0xFF, 0xFF, 0xFF, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Unsigned(0xFFFFFFFE),
+            &[0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        // Signed tests
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes1),
+            &[0x01],
+            Value::Signed(0x01),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes1),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Signed(0x01),
+            &[0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes2),
+            &[0x01, 0x02],
+            Value::Signed(0x0201),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes2),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Signed(0x0201),
+            &[0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes4),
+            &[0x01, 0x02, 0x03, 0x04],
+            Value::Signed(0x04030201),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes4),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Signed(0x04030201),
+            &[0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes8),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+            Value::Signed(0x0807060504030201),
+            &[],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes8),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Signed(0x0807060504030201),
+            &[0x09],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes2),
+            &[0xFF, 0xFF, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Signed(-1),
+            &[0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
+        check_value_read(
+            ElementType::Signed(ElementDataLength::Bytes4),
+            &[0xFE, 0xFF, 0xFF, 0xFF, 0x05, 0x06, 0x07, 0x08, 0x09],
+            Value::Signed(-2),
+            &[0x05, 0x06, 0x07, 0x08, 0x09],
+        );
+
         /*
-            ElementType::Signed(n) => {
-            ElementType::Unsigned(n) => {
             ElementType::Float => {
             ElementType::Double => {
             ElementType::Utf8String(_) => todo!(),
