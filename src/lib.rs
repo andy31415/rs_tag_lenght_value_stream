@@ -75,7 +75,7 @@ impl<'a> Parser<'a> {
         self.data.is_empty()
     }
 
-    /// Returns the undelying tag and rest of the data
+    /// Attempts to parse the tag information for the given value array
     pub(crate) fn read_tag_value(
         tag_type: TagType,
         data: &[u8],
@@ -128,6 +128,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Attempts to read a value from a byte array
     pub(crate) fn read_value(
         element_type: ElementType,
         data: &'a [u8],
@@ -229,22 +230,17 @@ impl<'a> Iterator for Parser<'a> {
         match self.data.split_first() {
             None => None,
             Some((control, rest)) => {
-                let tag_type = TagType::for_control(*control);
+                let tag_parse = Parser::read_tag_value(TagType::for_control(*control), rest)?;
+                let value_parse = Parser::read_value(
+                    ElementType::for_control(*control)?,
+                    tag_parse.remaining_input,
+                )?;
 
-                let result = Parser::read_tag_value(tag_type, rest)?;
-
-                let tag = result.parsed;
-                let rest = result.remaining_input;
-
-                let value_type = ElementType::for_control(*control)?;
-
-                let value = Parser::read_value(value_type, rest)?;
-
-                self.data = value.remaining_input;
-
+                // all parsing succeeded, advance input and return the parsing result
+                self.data = value_parse.remaining_input;
                 Some(Self::Item {
-                    tag,
-                    value: value.parsed,
+                    tag: tag_parse.parsed,
+                    value: value_parse.parsed,
                 })
             }
         }
@@ -263,7 +259,7 @@ mod tests {
         let empty = [].as_slice();
         assert_eq!(
             Parser::read_tag_value(TagType::Anonymous, empty),
-            Some(IncrementalParseResult{
+            Some(IncrementalParseResult {
                 parsed: TagValue::Anonymous,
                 remaining_input: empty
             })
@@ -289,7 +285,11 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile2byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 0x0201 },
+                parsed: TagValue::Full {
+                    vendor_id: 0,
+                    profile_id: 0,
+                    tag: 0x0201
+                },
                 remaining_input: [3, 4, 5, 6, 7, 8, 9, 10].as_slice()
             })
         );
@@ -313,7 +313,11 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile4byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 0x04030201 },
+                parsed: TagValue::Full {
+                    vendor_id: 0,
+                    profile_id: 0,
+                    tag: 0x04030201
+                },
                 remaining_input: [5, 6, 7, 8, 9, 10].as_slice()
             })
         );
@@ -321,7 +325,11 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified6byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: TagValue::Full { vendor_id: 0x0201, profile_id: 0x0403, tag: 0x0605 },
+                parsed: TagValue::Full {
+                    vendor_id: 0x0201,
+                    profile_id: 0x0403,
+                    tag: 0x0605
+                },
                 remaining_input: [7, 8, 9, 10].as_slice()
             })
         );
@@ -329,7 +337,11 @@ mod tests {
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified8byte, some_bytes),
             Some(IncrementalParseResult {
-                parsed: TagValue::Full { vendor_id: 0x0201, profile_id: 0x0403, tag: 0x08070605 },
+                parsed: TagValue::Full {
+                    vendor_id: 0x0201,
+                    profile_id: 0x0403,
+                    tag: 0x08070605
+                },
                 remaining_input: [9, 10].as_slice()
             })
         );
