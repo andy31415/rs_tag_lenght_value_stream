@@ -91,7 +91,7 @@ impl<'a> Parser<'a> {
         data: &'a [u8],
     ) -> Option<IncrementalParseResult<'a, Value<'a>>> {
         match element_type {
-            ElementType::Unsigned(n) => {
+            ElementType::Unsigned(n) | ElementType::Signed(n) => {
                 let value_len = match n {
                     types::ElementDataLength::Bytes1 if data.len() >= 1 => 1,
                     types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
@@ -99,21 +99,17 @@ impl<'a> Parser<'a> {
                     types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
                     _ => return None, // insufficient buffer space
                 };
-                Some(IncrementalParseResult {
-                    parsed: Value::Unsigned(LittleEndian::read_uint(data, value_len)),
-                    remaining_input: data.split_at(value_len).1,
-                })
-            }
-            ElementType::Signed(n) => {
-                let value_len = match n {
-                    types::ElementDataLength::Bytes1 if data.len() >= 1 => 1,
-                    types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
-                    types::ElementDataLength::Bytes4 if data.len() >= 4 => 4,
-                    types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
-                    _ => return None, // insufficient buffer space
+
+                let parsed = {
+                    if let ElementType::Unsigned(_) = element_type {
+                        Value::Unsigned(LittleEndian::read_uint(data, value_len))
+                    } else {
+                        Value::Signed(LittleEndian::read_int(data, value_len))
+                    }
                 };
+
                 Some(IncrementalParseResult {
-                    parsed: Value::Signed(LittleEndian::read_int(data, value_len)),
+                    parsed,
                     remaining_input: data.split_at(value_len).1,
                 })
             }
@@ -139,8 +135,31 @@ impl<'a> Parser<'a> {
                     remaining_input: data.split_at(8).1,
                 })
             }
-            ElementType::Utf8String(_) => todo!(),
-            ElementType::ByteString(_) => todo!(),
+            ElementType::Utf8String(data_len) | ElementType::ByteString(data_len) => {
+                let length_parsing = Parser::read_value(ElementType::Unsigned(data_len), data)?;
+                
+                let data_len = match length_parsing.parsed {
+                    Value::Unsigned(n) => n,
+                    _ => return None,
+                };
+                
+                if data_len > length_parsing.remaining_input.len() as u64 {
+                    // String too short
+                    return None;
+                }
+                
+                let (value, remaining_input) = length_parsing.remaining_input.split_at(data_len as usize);
+                
+                let parsed = {
+                    if let ElementType::Utf8String(_) = element_type {
+                        Value::Utf8(value)
+                    } else {
+                        Value::Bytes(value)
+                    }
+                };
+                
+                Some(IncrementalParseResult { parsed, remaining_input})
+            }
             ElementType::Null => Some(IncrementalParseResult {
                 parsed: Value::Null,
                 remaining_input: data,
@@ -498,7 +517,7 @@ mod tests {
             Value::Signed(-2),
             &[0x05, 0x06, 0x07, 0x08, 0x09],
         );
-        
+
         // Floating point number tests
         check_value_read(
             ElementType::Float,
@@ -528,9 +547,23 @@ mod tests {
             &[0x09],
         );
 
+        // Strings
+        check_value_read(
+            ElementType::Utf8String(ElementDataLength::Bytes1),
+            &[0x02, 0x41, 0x42, 0x11, 0x22, 0x33],
+            Value::Utf8(&[0x41, 0x42]),
+            &[0x11, 0x22, 0x33],
+        );
+
+        // Bytes
+        check_value_read(
+            ElementType::ByteString(ElementDataLength::Bytes1),
+            &[0x04, 0x01, 0x02, 0x00, 0xFF, 0x11, 0x22, 0x33],
+            Value::Bytes(&[0x01, 0x02, 0x00, 0xFF]),
+            &[0x11, 0x22, 0x33],
+        );
+
         /*
-            ElementType::Float => {
-            ElementType::Double => {
             ElementType::Utf8String(_) => todo!(),
             ElementType::ByteString(_) => todo!(),
         */
