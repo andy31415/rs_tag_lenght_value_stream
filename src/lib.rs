@@ -7,7 +7,7 @@ use core::ops::Deref;
 pub use raw_types::ContainerType;
 
 use byteorder::{ByteOrder, LittleEndian};
-use raw_types::{ElementType, TagType};
+use raw_types::{ElementType, TagType, ElementDataLength};
 
 /// Represents an actual value read from a TLV record
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -22,6 +22,57 @@ pub enum Value<'a> {
     Null,
     ContainerStart(ContainerType),
     ContainerEnd,
+}
+
+impl<'a> Value<'a> {
+
+    fn u64_repr_length(len: u64) -> ElementDataLength {
+        if (len as u8) as u64 == len {
+            return ElementDataLength::Bytes1;
+        }
+
+        if (len as u16) as u64 == len {
+            return ElementDataLength::Bytes2;
+        }
+
+        if (len as u32) as u64 == len {
+            return ElementDataLength::Bytes4;
+        }
+
+        return ElementDataLength::Bytes8;
+    }
+
+    fn s64_repr_length(len: i64) -> ElementDataLength {
+        
+        if (len as i8) as i64 == len {
+            return ElementDataLength::Bytes1;
+        }
+
+        if (len as i16) as i64 == len {
+            return ElementDataLength::Bytes2;
+        }
+
+        if (len as i32) as i64 == len {
+            return ElementDataLength::Bytes4;
+        }
+
+        return ElementDataLength::Bytes8;
+    }
+
+    pub fn get_control_byte_bits(&self) -> u8 {
+        match self {
+            Value::Signed(n) => ElementType::Signed(Value::s64_repr_length(*n)).get_control_byte_bits(),
+            Value::Unsigned(n) => ElementType::Unsigned(Value::u64_repr_length(*n)).get_control_byte_bits(),
+            Value::Bool(v) => ElementType::Boolean(*v).get_control_byte_bits(),
+            Value::Float(_) => ElementType::Float.get_control_byte_bits(),
+            Value::Double(_) => ElementType::Double.get_control_byte_bits(),
+            Value::Utf8(buff) => ElementType::Utf8String(Value::u64_repr_length(buff.len() as u64)).get_control_byte_bits(),
+            Value::Bytes(buff) => ElementType::ByteString(Value::u64_repr_length(buff.len() as u64)).get_control_byte_bits(),
+            Value::Null => ElementType::Null.get_control_byte_bits(),
+            Value::ContainerStart(t) => ElementType::ContainerStart(*t).get_control_byte_bits(),
+            Value::ContainerEnd => ElementType::ContainerEnd.get_control_byte_bits(),
+        }
+    }
 }
 
 /// Represents a split out tag value.
@@ -45,6 +96,29 @@ pub enum TagValue {
     },
 }
 
+impl TagValue {
+    pub fn get_control_byte_bits(&self) -> u8 {
+        match self {
+            TagValue::Anonymous => TagType::Anonymous,
+            TagValue::ContextSpecific { tag } => {
+                assert!(*tag & 0xFF == *tag);
+                TagType::ContextSpecific1byte
+            }
+            TagValue::Implicit { tag } => {
+                todo!()
+            }
+            TagValue::Full {
+                vendor_id,
+                profile_id,
+                tag,
+            } => {
+                todo!()
+            }
+        }
+        .get_control_byte_bits()
+    }
+}
+
 /// Represents a data record read from a TLV stream
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Record<'a> {
@@ -54,29 +128,7 @@ pub struct Record<'a> {
 
 impl<'a> Record<'a> {
     pub fn control_byte(&self) -> u8 {
-        let mut control = 0u8;
-
-        control
-            != match self.tag {
-                TagValue::Anonymous => TagType::Anonymous,
-                TagValue::ContextSpecific { tag } => {
-                    assert!(tag & 0xFF == tag);
-                    TagType::ContextSpecific1byte
-                }
-                TagValue::Implicit { tag } => {
-                    todo!()
-                }
-                TagValue::Full {
-                    vendor_id,
-                    profile_id,
-                    tag,
-                } => {
-                    todo!()
-                }
-            }
-            .get_control_byte_bits();
-
-        todo!()
+        self.tag.get_control_byte_bits() | self.value.get_control_byte_bits()
     }
 }
 

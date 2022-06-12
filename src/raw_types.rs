@@ -60,7 +60,7 @@ impl ElementType {
 
     /// Figure out what the lower 5 bits of a control byte have to
     /// be in order for this element type to match
-    fn get_control_byte_bits(&self) -> u8 {
+    pub fn get_control_byte_bits(&self) -> u8 {
         match self {
             ElementType::Signed(len) => match len {
                 ElementDataLength::Bytes1 => 0b00000,
