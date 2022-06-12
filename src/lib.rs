@@ -2,8 +2,6 @@
 
 pub mod raw_types;
 
-use core::ops::Deref;
-
 pub use raw_types::ContainerType;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -38,7 +36,7 @@ impl<'a> Value<'a> {
             return ElementDataLength::Bytes4;
         }
 
-        return ElementDataLength::Bytes8;
+        ElementDataLength::Bytes8
     }
 
     fn i64_repr_length(len: i64) -> ElementDataLength {
@@ -54,7 +52,7 @@ impl<'a> Value<'a> {
             return ElementDataLength::Bytes4;
         }
 
-        return ElementDataLength::Bytes8;
+        ElementDataLength::Bytes8
     }
 
     pub fn get_control_byte_bits(&self) -> u8 {
@@ -533,7 +531,7 @@ impl<'a, Data> TlvBytes<'a, Data>
 where
     Data: Iterator<Item = Record<'a>>,
 {
-    pub fn next(&'a mut self) -> Option<&'a [u8]> {
+    pub fn next_slice(&'a mut self) -> Option<&'a [u8]> {
         match self.state {
             TlvBytesState::SendControl => {
                 self.current_record = self.data.next();
