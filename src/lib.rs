@@ -97,7 +97,20 @@ pub enum TagValue {
 }
 
 impl TagValue {
-    pub fn get_control_byte_bits(&self) -> u8 {
+    /// Gets the corresponding control bits to represent this tag value
+    /// 
+    /// ```
+    /// # use tag_length_value_stream::TagValue;
+    /// # use tag_length_value_stream::raw_types::TagType;
+    /// 
+    /// assert_eq!(TagValue::Anonymous.tag_type(), TagType::Anonymous);
+    /// assert_eq!(TagValue::ContextSpecific{tag: 123}.tag_type(), TagType::ContextSpecific1byte);
+    /// assert_eq!(TagValue::Implicit{tag: 123}.tag_type(), TagType::Implicit2byte);
+    /// assert_eq!(TagValue::Implicit{tag: 0xFFFF}.tag_type(), TagType::Implicit2byte);
+    /// assert_eq!(TagValue::Implicit{tag: 0x10000}.tag_type(), TagType::Implicit4byte);
+    /// assert_eq!(TagValue::Implicit{tag: 0x123456}.tag_type(), TagType::Implicit4byte);
+    /// ```
+    pub fn tag_type(&self) -> TagType {
         match self {
             TagValue::Anonymous => TagType::Anonymous,
             TagValue::ContextSpecific { tag } => {
@@ -105,7 +118,11 @@ impl TagValue {
                 TagType::ContextSpecific1byte
             }
             TagValue::Implicit { tag } => {
-                todo!()
+                if *tag & 0xFFFF == *tag {
+                    TagType::Implicit2byte
+                } else {
+                    TagType::Implicit4byte
+                }
             }
             TagValue::Full {
                 vendor_id,
@@ -115,7 +132,10 @@ impl TagValue {
                 todo!()
             }
         }
-        .get_control_byte_bits()
+    }
+
+    pub fn extract_tag_into(&self, dest: &[u8]) -> &[u8] {
+        todo!()
     }
 }
 
@@ -128,7 +148,7 @@ pub struct Record<'a> {
 
 impl<'a> Record<'a> {
     pub fn control_byte(&self) -> u8 {
-        self.tag.get_control_byte_bits() | self.value.get_control_byte_bits()
+        self.tag.tag_type().get_control_byte_bits() | self.value.get_control_byte_bits()
     }
 }
 

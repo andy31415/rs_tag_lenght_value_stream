@@ -210,10 +210,12 @@ impl TagType {
     /// The bitmask is already shifted
     /// 
     /// ```
-    /// 
     /// # use tag_length_value_stream::raw_types::TagType;
     /// 
-    /// assert_eq!(TagType::Implicit4byte, 0b1010_0000)
+    /// assert_eq!(TagType::Anonymous.get_control_byte_bits(), 0b0000_0000);
+    /// assert_eq!(TagType::ContextSpecific1byte.get_control_byte_bits(), 0b0010_0000);
+    /// assert_eq!(TagType::Implicit4byte.get_control_byte_bits(), 0b1010_0000);
+    /// assert_eq!(TagType::FullyQualified8byte.get_control_byte_bits(), 0b1110_0000);
     /// ```
     pub fn get_control_byte_bits(&self) -> u8 {
         match self {
