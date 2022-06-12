@@ -500,8 +500,40 @@ enum TlvBytesState {
     Done,
 }
 
+/// Returns a stream of records one at a time.
+pub trait RecordStreamer<'a> {
+    fn next_record(&'a mut self) -> Option<Record<'a>>;
+}
+
+impl<'a> RecordStreamer<'a> for Iterator<Item=Record<'a>> {
+    fn next_record(&'a mut self) -> Option<Record<'a>> {
+        self.next()
+    }
+}
+
 /// Represents a transformation of an iterator of TLV Records
 /// into the corresponding sequence of bytes.
+/// 
+/// ```
+/// # use tag_length_value_stream::*;
+/// 
+/// let records = [
+///     Record {
+///        tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
+///        value: Value::ContainerStart(ContainerType::Structure)
+///     },
+///     Record {
+///        tag: TagValue::Implicit{tag: 1},
+///        value: Value::Unsigned(10),
+///     },
+///     Record {
+///        tag: TagValue::Anonymous,
+///        value: Value::ContainerEnd,
+///     },
+/// ];
+/// 
+/// let bytes = TlvBytes::new(records.iter());
+/// ```
 pub struct TlvBytes<'a, Data> {
     data: Data,
     current_record: Option<Record<'a>>,
@@ -514,8 +546,7 @@ pub struct TlvBytes<'a, Data> {
 }
 
 impl<'a, Data> TlvBytes<'a, Data>
-where
-    Data: Iterator<Item = Record<'a>>,
+where Data: RecordStreamer<'a>
 {
     pub fn new(data: Data) -> Self {
         Self {
@@ -525,16 +556,11 @@ where
             data_buffer: [0; 8],
         }
     }
-}
 
-impl<'a, Data> TlvBytes<'a, Data>
-where
-    Data: Iterator<Item = Record<'a>>,
-{
     pub fn next_slice(&'a mut self) -> Option<&'a [u8]> {
         match self.state {
             TlvBytesState::SendControl => {
-                self.current_record = self.data.next();
+                self.current_record = self.data.next_record();
                 match self.current_record {
                     None => {
                         self.state = TlvBytesState::Done;
