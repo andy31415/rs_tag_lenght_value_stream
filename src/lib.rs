@@ -7,7 +7,7 @@ use core::ops::Deref;
 pub use raw_types::ContainerType;
 
 use byteorder::{ByteOrder, LittleEndian};
-use raw_types::{ElementType, TagType, ElementDataLength};
+use raw_types::{ElementDataLength, ElementType, TagType};
 
 /// Represents an actual value read from a TLV record
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -25,7 +25,6 @@ pub enum Value<'a> {
 }
 
 impl<'a> Value<'a> {
-
     fn u64_repr_length(len: u64) -> ElementDataLength {
         if (len as u8) as u64 == len {
             return ElementDataLength::Bytes1;
@@ -42,8 +41,7 @@ impl<'a> Value<'a> {
         return ElementDataLength::Bytes8;
     }
 
-    fn s64_repr_length(len: i64) -> ElementDataLength {
-        
+    fn i64_repr_length(len: i64) -> ElementDataLength {
         if (len as i8) as i64 == len {
             return ElementDataLength::Bytes1;
         }
@@ -61,13 +59,21 @@ impl<'a> Value<'a> {
 
     pub fn get_control_byte_bits(&self) -> u8 {
         match self {
-            Value::Signed(n) => ElementType::Signed(Value::s64_repr_length(*n)).get_control_byte_bits(),
-            Value::Unsigned(n) => ElementType::Unsigned(Value::u64_repr_length(*n)).get_control_byte_bits(),
+            Value::Signed(n) => {
+                ElementType::Signed(Value::i64_repr_length(*n)).get_control_byte_bits()
+            }
+            Value::Unsigned(n) => {
+                ElementType::Unsigned(Value::u64_repr_length(*n)).get_control_byte_bits()
+            }
             Value::Bool(v) => ElementType::Boolean(*v).get_control_byte_bits(),
             Value::Float(_) => ElementType::Float.get_control_byte_bits(),
             Value::Double(_) => ElementType::Double.get_control_byte_bits(),
-            Value::Utf8(buff) => ElementType::Utf8String(Value::u64_repr_length(buff.len() as u64)).get_control_byte_bits(),
-            Value::Bytes(buff) => ElementType::ByteString(Value::u64_repr_length(buff.len() as u64)).get_control_byte_bits(),
+            Value::Utf8(buff) => ElementType::Utf8String(Value::u64_repr_length(buff.len() as u64))
+                .get_control_byte_bits(),
+            Value::Bytes(buff) => {
+                ElementType::ByteString(Value::u64_repr_length(buff.len() as u64))
+                    .get_control_byte_bits()
+            }
             Value::Null => ElementType::Null.get_control_byte_bits(),
             Value::ContainerStart(t) => ElementType::ContainerStart(*t).get_control_byte_bits(),
             Value::ContainerEnd => ElementType::ContainerEnd.get_control_byte_bits(),
@@ -98,11 +104,11 @@ pub enum TagValue {
 
 impl TagValue {
     /// Gets the corresponding control bits to represent this tag value
-    /// 
+    ///
     /// ```
     /// # use tag_length_value_stream::TagValue;
     /// # use tag_length_value_stream::raw_types::TagType;
-    /// 
+    ///
     /// assert_eq!(TagValue::Anonymous.tag_type(), TagType::Anonymous);
     /// assert_eq!(TagValue::ContextSpecific{tag: 123}.tag_type(), TagType::ContextSpecific1byte);
     /// assert_eq!(TagValue::Implicit{tag: 123}.tag_type(), TagType::Implicit2byte);
@@ -135,19 +141,70 @@ impl TagValue {
                 vendor_id,
                 profile_id,
                 tag,
-            } => {
-                match (vendor_id, profile_id, tag) {
-                    (0, 0, t) if ((*t & 0xFFFF) == *t) => TagType::CommonProfile2byte,
-                    (0, 0, _) => TagType::CommonProfile4byte,
-                    (0, _, _) => TagType::FullyQualified6byte,
-                    _ => TagType::FullyQualified8byte,
-                }
-            }
+            } => match (vendor_id, profile_id, tag) {
+                (0, 0, t) if ((*t & 0xFFFF) == *t) => TagType::CommonProfile2byte,
+                (0, 0, _) => TagType::CommonProfile4byte,
+                (0, _, _) => TagType::FullyQualified6byte,
+                _ => TagType::FullyQualified8byte,
+            },
         }
     }
 
-    pub fn extract_tag_into(&self, dest: &[u8]) -> &[u8] {
-        todo!()
+    pub fn extract_tag_into<'a>(&self, dest: &'a mut [u8]) -> &'a [u8] {
+        match self {
+            TagValue::Anonymous => dest.split_at(0).0,
+            TagValue::ContextSpecific { tag } | TagValue::Implicit { tag } => {
+                if *tag & 0xFFFF == *tag {
+                    LittleEndian::write_u16(dest, *tag as u16);
+                    dest.split_at(2).0
+                } else {
+                    LittleEndian::write_u32(dest, *tag);
+                    dest.split_at(2).0
+                }
+            }
+            TagValue::Full {
+                vendor_id: 0,
+                profile_id: 0,
+                tag,
+            } if ((*tag & 0xFFFF) == *tag) => {
+                LittleEndian::write_u16(dest, *tag as u16);
+                dest.split_at(2).0
+            }
+            TagValue::Full {
+                vendor_id: 0,
+                profile_id: 0,
+                tag,
+            } => {
+                LittleEndian::write_u32(dest, *tag);
+                dest.split_at(4).0
+            }
+            TagValue::Full {
+                vendor_id: 0,
+                profile_id,
+                tag,
+            } => {
+                {
+                    LittleEndian::write_u16(dest, *profile_id);
+                    let (_, rest) = dest.split_at_mut(2);
+                    LittleEndian::write_u32(rest, *tag);
+                }
+                dest.split_at(6).0
+            }
+            TagValue::Full {
+                vendor_id,
+                profile_id,
+                tag,
+            } => {
+                {
+                    LittleEndian::write_u16(dest, *vendor_id);
+                    let (_, rest) = dest.split_at_mut(2);
+                    LittleEndian::write_u16(rest, *profile_id);
+                    let (_, rest) = rest.split_at_mut(2);
+                    LittleEndian::write_u32(rest, *tag);
+                }
+                dest.split_at(8).0
+            }
+        }
     }
 }
 
@@ -506,26 +563,105 @@ where
                 }
             }
             TlvBytesState::SendTag => {
-                todo!()
+                let record = self.current_record.unwrap();
+
+                // decide which part to fix
+                self.state = match record.value {
+                    Value::Utf8(_) | Value::Bytes(_) => TlvBytesState::SendLength,
+                    Value::Signed(_) | Value::Unsigned(_) | Value::Float(_) | Value::Double(_) => {
+                        TlvBytesState::SendData
+                    }
+                    _ => TlvBytesState::SendControl,
+                };
+
+                Some(record.tag.extract_tag_into(self.data_buffer.as_mut_slice()))
             }
             TlvBytesState::SendLength => {
-                todo!()
-            }
-            TlvBytesState::SendData => match self.current_record {
-                Some(Record {
-                    tag: _,
-                    value: Value::Utf8(bytes),
-                })
-                | Some(Record {
-                    tag: _,
-                    value: Value::Bytes(bytes),
-                }) => {
-                    // Once we send the bytes, new state is the next element
-                    self.state = TlvBytesState::SendControl;
-                    Some(bytes)
+                // after sending length, data follows (if any)
+                self.state = TlvBytesState::SendData;
+
+                match self.current_record.unwrap().value {
+                    Value::Utf8(bytes) | Value::Bytes(bytes) => {
+                        let n = bytes.len() as u64;
+                        match Value::u64_repr_length(n) {
+                            ElementDataLength::Bytes1 => {
+                                self.data_buffer[0] = n as u8;
+                                if n == 0 {
+                                    // No data available, can send the next item
+                                    self.state = TlvBytesState::SendControl;
+                                }
+                                Some(self.data_buffer.split_at(1).0)
+                            }
+                            ElementDataLength::Bytes2 => {
+                                LittleEndian::write_u16(self.data_buffer.as_mut_slice(), n as u16);
+                                Some(self.data_buffer.split_at(2).0)
+                            }
+                            ElementDataLength::Bytes4 => {
+                                LittleEndian::write_u32(self.data_buffer.as_mut_slice(), n as u32);
+                                Some(self.data_buffer.split_at(4).0)
+                            }
+                            ElementDataLength::Bytes8 => {
+                                LittleEndian::write_u64(self.data_buffer.as_mut_slice(), n);
+                                Some(self.data_buffer.split_at(8).0)
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
-            },
+            }
+            TlvBytesState::SendData => {
+                // after sending data, move to the next record
+                self.state = TlvBytesState::SendControl;
+
+                match self.current_record.unwrap().value {
+                    Value::Utf8(bytes) | Value::Bytes(bytes) => Some(bytes),
+                    Value::Signed(n) => match Value::i64_repr_length(n) {
+                        ElementDataLength::Bytes1 => {
+                            self.data_buffer[0] = (n as i8) as u8;
+                            Some(self.data_buffer.split_at(1).0)
+                        }
+                        ElementDataLength::Bytes2 => {
+                            LittleEndian::write_i16(self.data_buffer.as_mut_slice(), n as i16);
+                            Some(self.data_buffer.split_at(2).0)
+                        }
+                        ElementDataLength::Bytes4 => {
+                            LittleEndian::write_i32(self.data_buffer.as_mut_slice(), n as i32);
+                            Some(self.data_buffer.split_at(4).0)
+                        }
+                        ElementDataLength::Bytes8 => {
+                            LittleEndian::write_i64(self.data_buffer.as_mut_slice(), n);
+                            Some(self.data_buffer.split_at(8).0)
+                        }
+                    },
+                    Value::Unsigned(n) => match Value::u64_repr_length(n) {
+                        ElementDataLength::Bytes1 => {
+                            self.data_buffer[0] = n as u8;
+                            Some(self.data_buffer.split_at(1).0)
+                        }
+                        ElementDataLength::Bytes2 => {
+                            LittleEndian::write_u16(self.data_buffer.as_mut_slice(), n as u16);
+                            Some(self.data_buffer.split_at(2).0)
+                        }
+                        ElementDataLength::Bytes4 => {
+                            LittleEndian::write_u32(self.data_buffer.as_mut_slice(), n as u32);
+                            Some(self.data_buffer.split_at(4).0)
+                        }
+                        ElementDataLength::Bytes8 => {
+                            LittleEndian::write_u64(self.data_buffer.as_mut_slice(), n);
+                            Some(self.data_buffer.split_at(8).0)
+                        }
+                    },
+                    Value::Float(n) => {
+                        LittleEndian::write_f32(self.data_buffer.as_mut_slice(), n);
+                        Some(self.data_buffer.split_at(4).0)
+                    }
+                    Value::Double(n) => {
+                        LittleEndian::write_f64(self.data_buffer.as_mut_slice(), n);
+                        Some(self.data_buffer.split_at(4).0)
+                    }
+                    _ => unreachable!(),
+                }
+            }
             TlvBytesState::Done => None,
         }
     }
