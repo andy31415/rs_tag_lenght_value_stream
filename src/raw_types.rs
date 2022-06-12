@@ -205,7 +205,17 @@ impl TagType {
     const CONTROL_BITS: u8 = 0b1110_0000;
     const SHIFT: u8 = 5;
 
-    fn get_control_byte_bits(&self) -> u8 {
+    /// Gets the bitmask corresponding to this tag type.
+    /// 
+    /// The bitmask is already shifted
+    /// 
+    /// ```
+    /// 
+    /// # use tag_length_value_stream::raw_types::TagType;
+    /// 
+    /// assert_eq!(TagType::Implicit4byte, 0b1010_0000)
+    /// ```
+    pub fn get_control_byte_bits(&self) -> u8 {
         match self {
             TagType::Anonymous => 0b000 << 5,
             TagType::ContextSpecific1byte => 0b001 << 5,

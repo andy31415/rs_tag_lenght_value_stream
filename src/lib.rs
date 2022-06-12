@@ -2,6 +2,8 @@
 
 pub mod raw_types;
 
+use core::ops::Deref;
+
 pub use raw_types::ContainerType;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -50,6 +52,34 @@ pub struct Record<'a> {
     pub value: Value<'a>,
 }
 
+impl<'a> Record<'a> {
+    pub fn control_byte(&self) -> u8 {
+        let mut control = 0u8;
+
+        control
+            != match self.tag {
+                TagValue::Anonymous => TagType::Anonymous,
+                TagValue::ContextSpecific { tag } => {
+                    assert!(tag & 0xFF == tag);
+                    TagType::ContextSpecific1byte
+                }
+                TagValue::Implicit { tag } => {
+                    todo!()
+                }
+                TagValue::Full {
+                    vendor_id,
+                    profile_id,
+                    tag,
+                } => {
+                    todo!()
+                }
+            }
+            .get_control_byte_bits();
+
+        todo!()
+    }
+}
+
 /// Represents an incremental parsing result containing
 /// some data and the remaining parse buffer
 #[derive(Debug, PartialEq)]
@@ -59,11 +89,11 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 }
 
 /// Provides the ability to parse TLV data into underlying types.
-/// 
+///
 /// # Examples
 ///
 /// Parsing a valid stream:
-/// 
+///
 /// ```
 /// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
 ///
@@ -100,9 +130,9 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 /// assert_eq!(parser.next(), None);
 /// assert!(parser.done());
 /// ```
-/// 
+///
 /// Parsing an invalid stream (tag terminated early)
-/// 
+///
 /// ```
 /// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
 ///
@@ -291,10 +321,10 @@ impl<'a> Parser<'a> {
 
 /// Iterating over a Parser means getting the underlying TLV data entries
 /// from the stream.
-/// 
+///
 /// Iteration will return None if the stream is exhaused OR if the stream
 /// encountered a parsing error.
-/// 
+///
 /// If None is returned due to a parsing error, then `done` will return false
 /// even though `next()` returned None.
 impl<'a> Iterator for Parser<'a> {
@@ -321,7 +351,102 @@ impl<'a> Iterator for Parser<'a> {
     }
 }
 
-///
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum TlvBytesState {
+    SendControl,
+    SendTag,
+    SendLength,
+    SendData,
+
+    Done,
+}
+enum Wrap<'a> {
+    Data(&'a [u8]),
+}
+
+impl<'a> Deref for Wrap<'a> {
+    type Target = &'a [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Wrap::Data(data) => data,
+        }
+    }
+}
+
+/// Represents a transformation of an iterator of TLV Records
+/// into the corresponding sequence of bytes.
+pub struct TlvBytes<'a, Data> {
+    data: Data,
+    current_record: Option<Record<'a>>,
+    state: TlvBytesState,
+
+    // At most 8 byptes are needed for longest things:
+    //   - 8 byte tags are the longest
+    //   - 8 byte integer values are the longest
+    data_buffer: [u8; 8],
+}
+
+impl<'a, Data> TlvBytes<'a, Data>
+where
+    Data: Iterator<Item = Record<'a>>,
+{
+    pub fn new(data: Data) -> Self {
+        Self {
+            data,
+            current_record: None,
+            state: TlvBytesState::SendControl,
+            data_buffer: [0; 8],
+        }
+    }
+}
+
+impl<'a, Data> TlvBytes<'a, Data>
+where
+    Data: Iterator<Item = Record<'a>>,
+{
+    pub fn next(&'a mut self) -> Option<&'a [u8]> {
+        match self.state {
+            TlvBytesState::SendControl => {
+                self.current_record = self.data.next();
+                match self.current_record {
+                    None => {
+                        self.state = TlvBytesState::Done;
+                        None
+                    }
+                    Some(record) => {
+                        self.data_buffer[0] = record.control_byte();
+                        self.state = TlvBytesState::SendTag;
+                        Some(self.data_buffer.split_at(1).0)
+                    }
+                }
+            }
+            TlvBytesState::SendTag => {
+                todo!()
+            }
+            TlvBytesState::SendLength => {
+                todo!()
+            }
+            TlvBytesState::SendData => match self.current_record {
+                Some(Record {
+                    tag: _,
+                    value: Value::Utf8(bytes),
+                })
+                | Some(Record {
+                    tag: _,
+                    value: Value::Bytes(bytes),
+                }) => {
+                    // Once we send the bytes, new state is the next element
+                    self.state = TlvBytesState::SendControl;
+                    Some(bytes)
+                }
+                _ => unreachable!(),
+            },
+            TlvBytesState::Done => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::raw_types::ElementDataLength;
