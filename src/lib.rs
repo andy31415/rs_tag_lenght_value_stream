@@ -501,19 +501,6 @@ enum TlvBytesState {
 
     Done,
 }
-enum Wrap<'a> {
-    Data(&'a [u8]),
-}
-
-impl<'a> Deref for Wrap<'a> {
-    type Target = &'a [u8];
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Wrap::Data(data) => data,
-        }
-    }
-}
 
 /// Represents a transformation of an iterator of TLV Records
 /// into the corresponding sequence of bytes.
