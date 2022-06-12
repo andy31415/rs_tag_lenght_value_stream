@@ -505,9 +505,23 @@ pub trait RecordStreamer<'a> {
     fn next_record(&'a mut self) -> Option<Record<'a>>;
 }
 
-impl<'a> RecordStreamer<'a> for Iterator<Item=Record<'a>> {
+struct IteratoRecords<Iter> 
+{
+    iter: Iter,
+}
+
+impl<'a, Iter> IteratoRecords<Iter> 
+where Iter: Iterator<Item=Record<'a>>
+{
+    pub fn new(iter: Iter) -> Self {
+        Self {iter}
+    }
+}
+
+impl<'a, Iter> RecordStreamer<'a> for  IteratoRecords<Iter> 
+where Iter: Iterator<Item=Record<'a>> {
     fn next_record(&'a mut self) -> Option<Record<'a>> {
-        self.next()
+        self.iter.next()
     }
 }
 
@@ -532,7 +546,7 @@ impl<'a> RecordStreamer<'a> for Iterator<Item=Record<'a>> {
 ///     },
 /// ];
 /// 
-/// let bytes = TlvBytes::new(records.iter());
+/// let bytes = TlvBytes::new(RecordStreamer::new(records.iter()));
 /// ```
 pub struct TlvBytes<'a, Data> {
     data: Data,
