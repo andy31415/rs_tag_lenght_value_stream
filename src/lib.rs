@@ -109,6 +109,13 @@ impl TagValue {
     /// assert_eq!(TagValue::Implicit{tag: 0xFFFF}.tag_type(), TagType::Implicit2byte);
     /// assert_eq!(TagValue::Implicit{tag: 0x10000}.tag_type(), TagType::Implicit4byte);
     /// assert_eq!(TagValue::Implicit{tag: 0x123456}.tag_type(), TagType::Implicit4byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 0, tag: 1}.tag_type(), TagType::CommonProfile2byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 0, tag: 0xFFFF}.tag_type(), TagType::CommonProfile2byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 0, tag: 0x10000}.tag_type(), TagType::CommonProfile4byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 1, tag: 1}.tag_type(), TagType::FullyQualified6byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 10, tag: 0x12345678}.tag_type(), TagType::FullyQualified6byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 1, profile_id: 0, tag: 0}.tag_type(), TagType::FullyQualified8byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 1, profile_id: 2, tag: 3}.tag_type(), TagType::FullyQualified8byte);
     /// ```
     pub fn tag_type(&self) -> TagType {
         match self {
@@ -129,7 +136,12 @@ impl TagValue {
                 profile_id,
                 tag,
             } => {
-                todo!()
+                match (vendor_id, profile_id, tag) {
+                    (0, 0, t) if ((*t & 0xFFFF) == *t) => TagType::CommonProfile2byte,
+                    (0, 0, _) => TagType::CommonProfile4byte,
+                    (0, _, _) => TagType::FullyQualified6byte,
+                    _ => TagType::FullyQualified8byte,
+                }
             }
         }
     }
