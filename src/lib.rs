@@ -143,7 +143,7 @@ impl TagValue {
             } => match (vendor_id, profile_id, tag) {
                 (0, 0, t) if ((*t & 0xFFFF) == *t) => TagType::CommonProfile2byte,
                 (0, 0, _) => TagType::CommonProfile4byte,
-                (0, _, _) => TagType::FullyQualified6byte,
+                (_, _, t) if ((*t & 0xFFFF) == *t) => TagType::FullyQualified6byte,
                 _ => TagType::FullyQualified8byte,
             },
         }
@@ -178,14 +178,16 @@ impl TagValue {
                 dest.split_at(4).0
             }
             TagValue::Full {
-                vendor_id: 0,
+                vendor_id,
                 profile_id,
                 tag,
-            } => {
+            } if ((*tag & 0xFFFF) == *tag) => {
                 {
-                    LittleEndian::write_u16(dest, *profile_id);
+                    LittleEndian::write_u16(dest, *vendor_id);
                     let (_, rest) = dest.split_at_mut(2);
-                    LittleEndian::write_u32(rest, *tag);
+                    LittleEndian::write_u16(rest, *profile_id);
+                    let (_, rest) = rest.split_at_mut(2);
+                    LittleEndian::write_u16(rest, *tag as u16);
                 }
                 dest.split_at(6).0
             }
@@ -594,9 +596,9 @@ impl TemporaryBytesStore {
 /// let mut records = streaming_iterator::convert(records.iter());
 /// let mut bytes = TlvBytes::new(&mut records);
 ///
-/// assert_eq!(bytes.next(), Some([0b1111_0101].as_slice()));  // fully qualified structure start
-/// assert_eq!(bytes.next(), Some([0xBB, 0xAA, 0xDD, 0xCC, 1, 0, 0, 0].as_slice()));  // tag: AABB/CCDD/1
-/// assert_eq!(bytes.next(), Some([0b0001_1000].as_slice()));  // anonymous tag, container end
+/// assert_eq!(bytes.next(), Some([0b1111_0101].as_slice()));                   // fully qualified structure start (6 byte)
+/// assert_eq!(bytes.next(), Some([0xBB, 0xAA, 0xDD, 0xCC, 1, 0].as_slice()));  // tag: AABB/CCDD/1
+/// assert_eq!(bytes.next(), Some([0b0001_1000].as_slice()));                   // anonymous tag, container end
 ///
 /// ```
 pub struct TlvBytes<'a, Data> {
@@ -1415,12 +1417,12 @@ mod tests {
         let mut bytes = TlvBytes::new(&mut streamer);
 
         let expected_slices = [
-            [0xF5].as_slice(),                               // Fully qualified structure start
-            [0xBB, 0xAA, 0xDD, 0xCC, 1, 0, 0, 0].as_slice(), // AABB/CCDD/1
-            [0b1000_0100].as_slice(),                        // implicit context, 1-byte integer
-            [0x01, 0x00].as_slice(),                         // 1 (implicit tag on 2 bytes)
-            [10].as_slice(),                                 // 1 byte integer value
-            [0b0001_1000].as_slice(),                        // Container end
+            [0b1101_0101].as_slice(), // Fully qualified 6 byte structure start
+            [0xBB, 0xAA, 0xDD, 0xCC, 1, 0].as_slice(), // AABB/CCDD/1
+            [0b1000_0100].as_slice(), // implicit context, 1-byte integer
+            [0x01, 0x00].as_slice(),  // 1 (implicit tag on 2 bytes)
+            [10].as_slice(),          // 1 byte integer value
+            [0b0001_1000].as_slice(), // Container end
         ];
 
         let mut idx = 0;
@@ -1437,19 +1439,35 @@ mod tests {
     fn encode_decode() {
         let records = [
             Record {
-                tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1},
+                tag: TagValue::Full {
+                    vendor_id: 0xAABB,
+                    profile_id: 0xCCDD,
+                    tag: 1,
+                },
                 value: Value::ContainerStart(ContainerType::Structure),
             },
             Record {
-                tag: TagValue::Full { vendor_id: 0, profile_id: 0xCCDD, tag: 123},
+                tag: TagValue::Full {
+                    vendor_id: 0,
+                    profile_id: 0xCCDD,
+                    tag: 123,
+                },
                 value: Value::ContainerStart(ContainerType::Array),
             },
             Record {
-                tag: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 100},
+                tag: TagValue::Full {
+                    vendor_id: 0,
+                    profile_id: 0,
+                    tag: 100,
+                },
                 value: Value::ContainerStart(ContainerType::List),
             },
             Record {
-                tag: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 0xAABBCCDD},
+                tag: TagValue::Full {
+                    vendor_id: 0,
+                    profile_id: 0,
+                    tag: 0xAABBCCDD,
+                },
                 value: Value::Bytes(b"BYTES"),
             },
             Record {
@@ -1468,19 +1486,17 @@ mod tests {
 
         let mut streamer = streaming_iterator::convert(records.iter());
         let mut bytes = TlvBytes::new(&mut streamer);
-        
+
         let mut accumulator = ByteAccumulator::default();
         assert_eq!(accumulator.accumulate(&mut bytes), Ok(()));
-        
+
         let parser = Parser::new(accumulator.buffer());
-        
+
         for (parsed, original) in parser.zip(records.iter()) {
-            assert_eq!(parsed, *original);
+            assert_eq!(*original, parsed);
         }
 
         let parser = Parser::new(accumulator.buffer());
         assert_eq!(parser.count(), records.len());
-        
     }
-    
 }
