@@ -154,7 +154,7 @@ impl TagValue {
     pub fn extract_tag_into<'a>(&self, dest: &'a mut [u8]) -> &'a [u8] {
         match self {
             TagValue::Anonymous => dest.split_at(0).0,
-            TagValue::ContextSpecific { tag }  => {
+            TagValue::ContextSpecific { tag } => {
                 assert!(*tag & 0xFF == *tag);
                 dest[0] = *tag as u8;
                 &dest[0..1]
@@ -1446,8 +1446,8 @@ mod tests {
     fn encode_decode() {
         // NOTE: technically 4 and 8 bytes strings should be possible, however it is unlikely
         //       that we have RAM to generate such things especially on embedded. So test 256 for now.
-        let many_bytes : [u8; 256] = [0; 256];
-        
+        let many_bytes: [u8; 256] = [0; 256];
+
         let records = [
             Record {
                 tag: TagValue::Full {
@@ -1499,11 +1499,31 @@ mod tests {
                     profile_id: 2,
                     tag: 0xAABB,
                 },
-                value: Value::Null
+                value: Value::Null,
             },
             Record {
                 tag: TagValue::ContextSpecific { tag: 0x12 },
                 value: Value::Bytes(&many_bytes),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 100 },
+                value: Value::Signed(-123456),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 101 },
+                value: Value::Signed(-1),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 102 },
+                value: Value::Signed(1),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 103 },
+                value: Value::Float(12.5),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 104 },
+                value: Value::Double(11.125),
             },
         ];
 
