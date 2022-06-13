@@ -503,23 +503,16 @@ enum TlvBytesState {
     Done,
 }
 
-// TODO:
-//    - temporary_bytes_storer (has a lifetime?)
-//    - record storer
-
-pub struct TemporaryBytesStore {
+/// Represents a general storage of data.
+/// 
+/// Supports writing up to 8-byte values.
+#[derive(Debug, Default)]
+struct TemporaryBytesStore {
     data: [u8; 8],   // can store at most a u64
     data_len: usize, // amount of dta written so far
 }
 
 impl TemporaryBytesStore {
-    pub fn new() -> Self {
-        Self {
-            data: [0; 8],
-            data_len: 0,
-        }
-    }
-
     pub fn current(&self) -> &[u8] {
         &self.data[0..self.data_len]
     }
@@ -584,22 +577,19 @@ impl TemporaryBytesStore {
 ///
 pub struct TlvBytes<'a, Data> {
     data: &'a mut Data,
-    value_store: &'a mut TemporaryBytesStore,
+    value_store: TemporaryBytesStore,
     state: TlvBytesState,
-
-    current_record: Option<&'a Record<'a>>,
 }
 
 impl<'a, Data> TlvBytes<'a, Data>
 where
     Data: StreamingIterator<Item = &'a Record<'a>>,
 {
-    pub fn new(data: &'a mut Data, value_store: &'a mut TemporaryBytesStore) -> Self {
+    pub fn new(data: &'a mut Data) -> Self {
         Self {
             data,
-            current_record: None,
             state: TlvBytesState::NextRecord,
-            value_store,
+            value_store: TemporaryBytesStore::default(),
         }
     }
 }
@@ -616,7 +606,7 @@ where
             TlvBytesState::SendControl => Some(self.value_store.current()),
             TlvBytesState::SendTag => Some(self.value_store.current()),
             TlvBytesState::SendLength => Some(self.value_store.current()),
-            TlvBytesState::SendData => match self.current_record.unwrap().value {
+            TlvBytesState::SendData => match self.data.get().unwrap().value {
                 Value::Utf8(bytes) | Value::Bytes(bytes) => Some(bytes),
                 Value::Signed(_) | Value::Unsigned(_) | Value::Float(_) | Value::Double(_) => {
                     Some(self.value_store.current())
@@ -656,7 +646,6 @@ where
 
             // LOAD THE VALUE
             match self.state {
-                TlvBytesState::NextRecord => { /* no value to prepare  */ }
                 TlvBytesState::SendControl => self
                     .value_store
                     .write_u8(self.data.get().unwrap().control_byte()),
@@ -673,7 +662,7 @@ where
                     }
                     _ => unreachable!(),
                 },
-                TlvBytesState::SendData => match self.current_record.unwrap().value {
+                TlvBytesState::SendData => match self.data.get().unwrap().value {
                     Value::Utf8(_) | Value::Bytes(_) => { /* data inline in the record */ }
                     Value::Signed(n) => match Value::i64_repr_length(n) {
                         ElementDataLength::Bytes1 => self.value_store.write_i8(n as i8),
@@ -691,12 +680,14 @@ where
                     Value::Double(n) => self.value_store.write_f64(n),
                     _ => unreachable!(),
                 },
-                TlvBytesState::Done => todo!(),
-            }
+                TlvBytesState::NextRecord | TlvBytesState::Done => {
+                    /* no actual data to contain */
+                }
+            };
 
             match self.get() {
                 None => break,
-                Some(data) if data.len() > 0 => break,
+                Some(data) if !data.is_empty() => break,
                 _ => { /* No data available, move to next state */ }
             }
         }
@@ -1349,16 +1340,16 @@ mod tests {
             },
         ];
 
-        let mut store = TemporaryBytesStore::new();
-        let mut streamer = streaming_iterator::convert(records.into_iter());
-        let mut bytes = TlvBytes::new(&mut streamer, &mut store);
+        let mut streamer = streaming_iterator::convert(records.iter());
+        let mut bytes = TlvBytes::new(&mut streamer);
 
         let expected_slices = [
             [0xF5].as_slice(),                               // Fully qualified structure start
             [0xBB, 0xAA, 0xDD, 0xCC, 1, 0, 0, 0].as_slice(), // AABB/CCDD/1
             [0b1000_0100].as_slice(),                        // implicit context, 1-byte integer
-            [0x01, 0x00].as_slice(),                               // 1 (implicit tag on 2 bytes)
+            [0x01, 0x00].as_slice(),                         // 1 (implicit tag on 2 bytes)
             [10].as_slice(),                                 // 1 byte integer value
+            [0b0001_1000].as_slice(),                        // Container end
         ];
 
         let mut idx = 0;
