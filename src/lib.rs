@@ -602,13 +602,15 @@ where
             value_store,
         }
     }
+}
 
-    pub fn next(&mut self) -> Option<&[u8]> {
-        self.advance();
-        self.next_slice()
-    }
+impl<'a, Data> StreamingIterator for TlvBytes<'a, Data>
+where
+    Data: StreamingIterator<Item = &'a Record<'a>>,
+{
+    type Item = [u8];
 
-    pub fn next_slice(&self) -> Option<&[u8]> {
+    fn get(&self) -> Option<&[u8]> {
         match self.state {
             TlvBytesState::NextRecord => Some(&[]),
             TlvBytesState::SendControl => Some(self.value_store.current()),
@@ -625,7 +627,7 @@ where
         }
     }
 
-    pub fn advance(&mut self) {
+    fn advance(&mut self) {
         if self.state == TlvBytesState::Done {
             return;
         }
@@ -691,11 +693,11 @@ where
                 },
                 TlvBytesState::Done => todo!(),
             }
-            
-            match self.next_slice() {
+
+            match self.get() {
                 None => break,
                 Some(data) if data.len() > 0 => break,
-                _ => { /* No data available, move to next state */}
+                _ => { /* No data available, move to next state */ }
             }
         }
     }
@@ -1354,17 +1356,18 @@ mod tests {
         let expected_slices = [
             [0xF5].as_slice(),                               // Fully qualified structure start
             [0xBB, 0xAA, 0xDD, 0xCC, 1, 0, 0, 0].as_slice(), // AABB/CCDD/1
+            [0b1000_0100].as_slice(),                        // implicit context, 1-byte integer
+            [0x01, 0x00].as_slice(),                               // 1 (implicit tag on 2 bytes)
+            [10].as_slice(),                                 // 1 byte integer value
         ];
 
         let mut idx = 0;
         while let Some(data) = bytes.next() {
             assert!(idx < expected_slices.len());
-            assert_eq!(data, expected_slices[idx]);
-            idx = idx+1
+            assert_eq!(data, expected_slices[idx], "Data match at index {}", idx);
+            idx = idx + 1
         }
-        
-        assert_eq!(idx, expected_slices.len());
 
-        
+        assert_eq!(idx, expected_slices.len());
     }
 }
