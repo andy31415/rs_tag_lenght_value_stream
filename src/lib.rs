@@ -6,6 +6,7 @@ pub use raw_types::ContainerType;
 
 use byteorder::{ByteOrder, LittleEndian};
 use raw_types::{ElementDataLength, ElementType, TagType};
+use streaming_iterator::StreamingIterator;
 
 /// Represents an actual value read from a TLV record
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -492,6 +493,8 @@ impl<'a> Iterator for Parser<'a> {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum TlvBytesState {
+    NextRecord,
+
     SendControl,
     SendTag,
     SendLength,
@@ -500,241 +503,200 @@ enum TlvBytesState {
     Done,
 }
 
-/// Returns a stream of records one at a time.
-pub trait RecordStreamer<'a> {
-    fn next_record(&'a mut self) -> Option<Record<'a>>;
-}
-
-pub struct IteratorRecords<Iter> {
-    iter: Iter,
-}
-
-impl<'a, Iter> IteratorRecords<Iter> {
-    pub fn new(iter: Iter) -> Self {
-        Self { iter }
-    }
-}
-
-impl<'a, Iter> RecordStreamer<'a> for IteratorRecords<Iter>
-where
-    Iter: Iterator<Item = &'a Record<'a>>,
-{
-    fn next_record(&'a mut self) -> Option<Record<'a>> {
-        match self.iter.next() {
-            Some(value) => Some(*value),
-            None => None,
-        }
-    }
-}
-
 // TODO:
 //    - temporary_bytes_storer (has a lifetime?)
 //    - record storer
 
 pub struct TemporaryBytesStore {
-   data: [u8; 8],   // can store at most a u64
+    data: [u8; 8],   // can store at most a u64
+    data_len: usize, // amount of dta written so far
 }
 
 impl TemporaryBytesStore {
     pub fn new() -> Self {
-        Self { data: [0; 8] }
+        Self {
+            data: [0; 8],
+            data_len: 0,
+        }
     }
-    
-    pub fn write_u8(&mut self, v: u8) -> &[u8] {
+
+    pub fn current(&self) -> &[u8] {
+        &self.data[0..self.data_len]
+    }
+
+    pub fn write_u8(&mut self, v: u8) {
         self.data[0] = v;
-        self.data.split_at(1).0
+        self.data_len = 1;
     }
 
-    pub fn write_u16(&mut self, v: u16) -> &[u8] {
+    pub fn write_u16(&mut self, v: u16) {
         LittleEndian::write_u16(self.data.as_mut_slice(), v);
-        self.data.split_at(2).0
+        self.data_len = 2;
     }
 
-    pub fn write_u32(&mut self, v: u32) -> &[u8] {
+    pub fn write_u32(&mut self, v: u32) {
         LittleEndian::write_u32(self.data.as_mut_slice(), v);
-        self.data.split_at(4).0
+        self.data_len = 4;
     }
 
-    pub fn write_u64(&mut self, v: u64) -> &[u8] {
+    pub fn write_u64(&mut self, v: u64) {
         LittleEndian::write_u64(self.data.as_mut_slice(), v);
-        self.data.split_at(8).0
+        self.data_len = 8;
     }
 
-    pub fn write_i8(&mut self, v: i8) -> &[u8] {
+    pub fn write_i8(&mut self, v: i8) {
         self.data[0] = v as u8;
-        self.data.split_at(1).0
+        self.data_len = 1;
     }
 
-    pub fn write_i16(&mut self, v: i16) -> &[u8] {
+    pub fn write_i16(&mut self, v: i16) {
         LittleEndian::write_i16(self.data.as_mut_slice(), v);
-        self.data.split_at(2).0
+        self.data_len = 2;
     }
 
-    pub fn write_i32(&mut self, v: i32) -> &[u8] {
+    pub fn write_i32(&mut self, v: i32) {
         LittleEndian::write_i32(self.data.as_mut_slice(), v);
-        self.data.split_at(4).0
+        self.data_len = 4;
     }
 
-    pub fn write_i64(&mut self, v: i64) -> &[u8] {
+    pub fn write_i64(&mut self, v: i64) {
         LittleEndian::write_i64(self.data.as_mut_slice(), v);
-        self.data.split_at(8).0
+        self.data_len = 8;
     }
 
-    pub fn write_f32(&mut self, v: f32) -> &[u8] {
+    pub fn write_f32(&mut self, v: f32) {
         LittleEndian::write_f32(self.data.as_mut_slice(), v);
-        self.data.split_at(4).0
+        self.data_len = 4;
     }
 
-    pub fn write_f64(&mut self, v: f64) -> &[u8] {
+    pub fn write_f64(&mut self, v: f64) {
         LittleEndian::write_f64(self.data.as_mut_slice(), v);
-        self.data.split_at(8).0
+        self.data_len = 8;
+    }
+
+    pub fn write_tag(&mut self, tag: &TagValue) {
+        self.data_len = tag.extract_tag_into(self.data.as_mut_slice()).len();
     }
 }
-
-
 
 /// Represents a transformation of an iterator of TLV Records
 /// into the corresponding sequence of bytes.
 ///
-/// ```
-/// # use tag_length_value_stream::*;
-///
-/// let records = [
-///     Record {
-///        tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
-///        value: Value::ContainerStart(ContainerType::Structure)
-///     },
-///     Record {
-///        tag: TagValue::Implicit{tag: 1},
-///        value: Value::Unsigned(10),
-///     },
-///     Record {
-///        tag: TagValue::Anonymous,
-///        value: Value::ContainerEnd,
-///     },
-/// ];
-///
-/// let mut store = TemporaryBytesStore::new();
-/// let streamer = IteratorRecords::new(records.into_iter());
-/// let mut bytes = TlvBytes::new(streamer, store);
-///
-/// let expected_slices = [
-///     [0xF5].as_slice(), // Fully qualified structure start
-///     [0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice(), // AABB/CCDD/1
-/// ];
-///
-///
-/// // while let Some(slice) = bytes.next_slice() {
-/// //   assert_eq!(slice, [0]);
-/// // }
-/// 
-/// // while bytes.advance() {
-/// //   assert_eq!(bytes.current(), Some([0x00].as_slice())); // Test
-/// // }
-///
-/// // bytes.advance();
-/// // assert_eq!(bytes.current(), Some([0xF5].as_slice())); // Fully qualified structure start
-/// // bytes.advance();
-/// // assert_eq!(bytes.current(), Some([0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice())); // AABB/CCDD/1
-/// // assert_eq!(bytes.next_slice(), None);
-/// ```
 pub struct TlvBytes<'a, Data> {
-    data: Data,
-    current_record: Option<Record<'a>>,
+    data: &'a mut Data,
     value_store: &'a mut TemporaryBytesStore,
     state: TlvBytesState,
+
+    current_record: Option<&'a Record<'a>>,
 }
 
 impl<'a, Data> TlvBytes<'a, Data>
-where Data: RecordStreamer<'a>,
+where
+    Data: StreamingIterator<Item = &'a Record<'a>>,
 {
-    pub fn new(data: Data, value_store: &'a mut TemporaryBytesStore) -> Self {
+    pub fn new(data: &'a mut Data, value_store: &'a mut TemporaryBytesStore) -> Self {
         Self {
             data,
             current_record: None,
-            state: TlvBytesState::SendControl,
-            value_store
+            state: TlvBytesState::NextRecord,
+            value_store,
         }
     }
 
-    pub fn next_slice(&'a mut self) -> Option<&'a [u8]> 
-    {
+    pub fn next(&mut self) -> Option<&[u8]> {
+        self.advance();
+        self.next_slice()
+    }
+
+    pub fn next_slice(&self) -> Option<&[u8]> {
         match self.state {
-            TlvBytesState::SendControl => {
-                self.current_record = self.data.next_record();
-                match self.current_record {
-                    None => {
-                        self.state = TlvBytesState::Done;
-                        None
-                    }
-                    Some(record) => {
-                        self.state = TlvBytesState::SendTag;
-                        Some(self.value_store.write_u8(record.control_byte()))
+            TlvBytesState::NextRecord => Some(&[]),
+            TlvBytesState::SendControl => Some(self.value_store.current()),
+            TlvBytesState::SendTag => Some(self.value_store.current()),
+            TlvBytesState::SendLength => Some(self.value_store.current()),
+            TlvBytesState::SendData => match self.current_record.unwrap().value {
+                Value::Utf8(bytes) | Value::Bytes(bytes) => Some(bytes),
+                Value::Signed(_) | Value::Unsigned(_) | Value::Float(_) | Value::Double(_) => {
+                    Some(self.value_store.current())
+                }
+                _ => unreachable!(),
+            },
+            TlvBytesState::Done => None,
+        }
+    }
+
+    pub fn advance(&mut self) {
+        if self.state == TlvBytesState::Done {
+            return;
+        }
+
+        loop {
+            self.state = match self.state {
+                TlvBytesState::NextRecord => {
+                    self.data.advance();
+                    match self.data.get() {
+                        None => TlvBytesState::Done,
+                        _ => TlvBytesState::SendControl,
                     }
                 }
-            }
-            TlvBytesState::SendTag => {
-                let record = self.current_record.unwrap();
-
-                // decide which part to fix
-                self.state = match record.value {
+                TlvBytesState::SendControl => TlvBytesState::SendTag, // tag always available
+                TlvBytesState::SendTag => match self.data.get().unwrap().value {
                     Value::Utf8(_) | Value::Bytes(_) => TlvBytesState::SendLength,
                     Value::Signed(_) | Value::Unsigned(_) | Value::Float(_) | Value::Double(_) => {
                         TlvBytesState::SendData
                     }
-                    _ => TlvBytesState::SendControl,
-                };
+                    _ => TlvBytesState::NextRecord,
+                },
+                TlvBytesState::SendLength => TlvBytesState::SendData,
+                TlvBytesState::SendData => TlvBytesState::NextRecord,
+                TlvBytesState::Done => TlvBytesState::Done,
+            };
 
-                todo!()
-                // Some(record.tag.extract_tag_into(self.data_buffer.as_mut_slice()))
-            }
-            TlvBytesState::SendLength => {
-                // after sending length, data follows (if any)
-                self.state = TlvBytesState::SendData;
-
-                match self.current_record.unwrap().value {
+            // LOAD THE VALUE
+            match self.state {
+                TlvBytesState::NextRecord => { /* no value to prepare  */ }
+                TlvBytesState::SendControl => self
+                    .value_store
+                    .write_u8(self.data.get().unwrap().control_byte()),
+                TlvBytesState::SendTag => self.value_store.write_tag(&self.data.get().unwrap().tag),
+                TlvBytesState::SendLength => match self.data.get().unwrap().value {
                     Value::Utf8(bytes) | Value::Bytes(bytes) => {
                         let n = bytes.len() as u64;
                         match Value::u64_repr_length(n) {
-                            ElementDataLength::Bytes1 => {
-                                if n == 0 {
-                                    // No data available, can send the next item
-                                    self.state = TlvBytesState::SendControl;
-                                }
-                                Some(self.value_store.write_u8(n as u8))
-                            }
-                            ElementDataLength::Bytes2 => Some(self.value_store.write_u16(n as u16)),
-                            ElementDataLength::Bytes4 => Some(self.value_store.write_u32(n as u32)),
-                            ElementDataLength::Bytes8 => Some(self.value_store.write_u64(n)),
+                            ElementDataLength::Bytes1 => self.value_store.write_u8(n as u8),
+                            ElementDataLength::Bytes2 => self.value_store.write_u16(n as u16),
+                            ElementDataLength::Bytes4 => self.value_store.write_u32(n as u32),
+                            ElementDataLength::Bytes8 => self.value_store.write_u64(n),
                         }
                     }
                     _ => unreachable!(),
-                }
-            }
-            TlvBytesState::SendData => {
-                // after sending data, move to the next record
-                self.state = TlvBytesState::SendControl;
-
-                match self.current_record.unwrap().value {
-                    Value::Utf8(bytes) | Value::Bytes(bytes) => Some(bytes),
+                },
+                TlvBytesState::SendData => match self.current_record.unwrap().value {
+                    Value::Utf8(_) | Value::Bytes(_) => { /* data inline in the record */ }
                     Value::Signed(n) => match Value::i64_repr_length(n) {
-                        ElementDataLength::Bytes1 => Some(self.value_store.write_i8(n as i8)),
-                        ElementDataLength::Bytes2 => Some(self.value_store.write_i16(n as i16)),
-                        ElementDataLength::Bytes4 => Some(self.value_store.write_i32(n as i32)),
-                        ElementDataLength::Bytes8 => Some(self.value_store.write_i64(n)),
+                        ElementDataLength::Bytes1 => self.value_store.write_i8(n as i8),
+                        ElementDataLength::Bytes2 => self.value_store.write_i16(n as i16),
+                        ElementDataLength::Bytes4 => self.value_store.write_i32(n as i32),
+                        ElementDataLength::Bytes8 => self.value_store.write_i64(n),
                     },
                     Value::Unsigned(n) => match Value::u64_repr_length(n) {
-                        ElementDataLength::Bytes1 => Some(self.value_store.write_u8(n as u8)),
-                        ElementDataLength::Bytes2 => Some(self.value_store.write_u16(n as u16)),
-                        ElementDataLength::Bytes4 => Some(self.value_store.write_u32(n as u32)),
-                        ElementDataLength::Bytes8 => Some(self.value_store.write_u64(n)),
+                        ElementDataLength::Bytes1 => self.value_store.write_u8(n as u8),
+                        ElementDataLength::Bytes2 => self.value_store.write_u16(n as u16),
+                        ElementDataLength::Bytes4 => self.value_store.write_u32(n as u32),
+                        ElementDataLength::Bytes8 => self.value_store.write_u64(n),
                     },
-                    Value::Float(n) => Some(self.value_store.write_f32(n)),
-                    Value::Double(n) => Some(self.value_store.write_f64(n)),
+                    Value::Float(n) => self.value_store.write_f32(n),
+                    Value::Double(n) => self.value_store.write_f64(n),
                     _ => unreachable!(),
-                }
+                },
+                TlvBytesState::Done => todo!(),
             }
-            TlvBytesState::Done => None,
+            
+            match self.next_slice() {
+                None => break,
+                Some(data) if data.len() > 0 => break,
+                _ => { /* No data available, move to next state */}
+            }
         }
     }
 }
@@ -1362,5 +1324,47 @@ mod tests {
             assert_eq!(parser.next(), Some(value));
         }
         assert!(parser.done());
+    }
+
+    #[test]
+    fn explicit_test() {
+        let records = [
+            Record {
+                tag: TagValue::Full {
+                    vendor_id: 0xAABB,
+                    profile_id: 0xCCDD,
+                    tag: 1,
+                },
+                value: Value::ContainerStart(ContainerType::Structure),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 1 },
+                value: Value::Unsigned(10),
+            },
+            Record {
+                tag: TagValue::Anonymous,
+                value: Value::ContainerEnd,
+            },
+        ];
+
+        let mut store = TemporaryBytesStore::new();
+        let mut streamer = streaming_iterator::convert(records.into_iter());
+        let mut bytes = TlvBytes::new(&mut streamer, &mut store);
+
+        let expected_slices = [
+            [0xF5].as_slice(),                               // Fully qualified structure start
+            [0xBB, 0xAA, 0xDD, 0xCC, 1, 0, 0, 0].as_slice(), // AABB/CCDD/1
+        ];
+
+        let mut idx = 0;
+        while let Some(data) = bytes.next() {
+            assert!(idx < expected_slices.len());
+            assert_eq!(data, expected_slices[idx]);
+            idx = idx+1
+        }
+        
+        assert_eq!(idx, expected_slices.len());
+
+        
     }
 }
