@@ -527,6 +527,72 @@ where
     }
 }
 
+// TODO:
+//    - temporary_bytes_storer (has a lifetime?)
+//    - record storer
+
+pub struct TemporaryBytesStore {
+   data: [u8; 8],   // can store at most a u64
+}
+
+impl TemporaryBytesStore {
+    pub fn new() -> Self {
+        Self { data: [0; 8] }
+    }
+    
+    pub fn write_u8(&mut self, v: u8) -> &[u8] {
+        self.data[0] = v;
+        self.data.split_at(1).0
+    }
+
+    pub fn write_u16(&mut self, v: u16) -> &[u8] {
+        LittleEndian::write_u16(self.data.as_mut_slice(), v);
+        self.data.split_at(2).0
+    }
+
+    pub fn write_u32(&mut self, v: u32) -> &[u8] {
+        LittleEndian::write_u32(self.data.as_mut_slice(), v);
+        self.data.split_at(4).0
+    }
+
+    pub fn write_u64(&mut self, v: u64) -> &[u8] {
+        LittleEndian::write_u64(self.data.as_mut_slice(), v);
+        self.data.split_at(8).0
+    }
+
+    pub fn write_i8(&mut self, v: i8) -> &[u8] {
+        self.data[0] = v as u8;
+        self.data.split_at(1).0
+    }
+
+    pub fn write_i16(&mut self, v: i16) -> &[u8] {
+        LittleEndian::write_i16(self.data.as_mut_slice(), v);
+        self.data.split_at(2).0
+    }
+
+    pub fn write_i32(&mut self, v: i32) -> &[u8] {
+        LittleEndian::write_i32(self.data.as_mut_slice(), v);
+        self.data.split_at(4).0
+    }
+
+    pub fn write_i64(&mut self, v: i64) -> &[u8] {
+        LittleEndian::write_i64(self.data.as_mut_slice(), v);
+        self.data.split_at(8).0
+    }
+
+    pub fn write_f32(&mut self, v: f32) -> &[u8] {
+        LittleEndian::write_f32(self.data.as_mut_slice(), v);
+        self.data.split_at(4).0
+    }
+
+    pub fn write_f64(&mut self, v: f64) -> &[u8] {
+        LittleEndian::write_f64(self.data.as_mut_slice(), v);
+        self.data.split_at(8).0
+    }
+}
+
+
+
 /// Represents a transformation of an iterator of TLV Records
 /// into the corresponding sequence of bytes.
 ///
@@ -548,8 +614,9 @@ where
 ///     },
 /// ];
 ///
+/// let mut store = TemporaryBytesStore::new();
 /// let streamer = IteratorRecords::new(records.into_iter());
-/// let mut bytes = TlvBytes::new(streamer);
+/// let mut bytes = TlvBytes::new(streamer, store);
 ///
 /// let expected_slices = [
 ///     [0xF5].as_slice(), // Fully qualified structure start
@@ -560,36 +627,38 @@ where
 /// // while let Some(slice) = bytes.next_slice() {
 /// //   assert_eq!(slice, [0]);
 /// // }
+/// 
+/// // while bytes.advance() {
+/// //   assert_eq!(bytes.current(), Some([0x00].as_slice())); // Test
+/// // }
 ///
-/// assert_eq!(bytes.next_slice(), Some([0xF5].as_slice())); // Fully qualified structure start
-/// assert_eq!(bytes.next_slice(), Some([0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice())); // AABB/CCDD/1
+/// // bytes.advance();
+/// // assert_eq!(bytes.current(), Some([0xF5].as_slice())); // Fully qualified structure start
+/// // bytes.advance();
+/// // assert_eq!(bytes.current(), Some([0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice())); // AABB/CCDD/1
 /// // assert_eq!(bytes.next_slice(), None);
 /// ```
 pub struct TlvBytes<'a, Data> {
     data: Data,
     current_record: Option<Record<'a>>,
+    value_store: &'a mut TemporaryBytesStore,
     state: TlvBytesState,
-
-    // At most 8 byptes are needed for longest things:
-    //   - 8 byte tags are the longest
-    //   - 8 byte integer values are the longest
-    data_buffer: [u8; 8],
 }
 
 impl<'a, Data> TlvBytes<'a, Data>
-where
-    Data: RecordStreamer<'a>,
+where Data: RecordStreamer<'a>,
 {
-    pub fn new(data: Data) -> Self {
+    pub fn new(data: Data, value_store: &'a mut TemporaryBytesStore) -> Self {
         Self {
             data,
             current_record: None,
             state: TlvBytesState::SendControl,
-            data_buffer: [0; 8],
+            value_store
         }
     }
-    
-    pub fn next_slice(&'a mut self) -> Option<&'a [u8]>{
+
+    pub fn next_slice(&'a mut self) -> Option<&'a [u8]> 
+    {
         match self.state {
             TlvBytesState::SendControl => {
                 self.current_record = self.data.next_record();
@@ -599,9 +668,8 @@ where
                         None
                     }
                     Some(record) => {
-                        self.data_buffer[0] = record.control_byte();
                         self.state = TlvBytesState::SendTag;
-                        Some(self.data_buffer.split_at(1).0)
+                        Some(self.value_store.write_u8(record.control_byte()))
                     }
                 }
             }
@@ -617,7 +685,8 @@ where
                     _ => TlvBytesState::SendControl,
                 };
 
-                Some(record.tag.extract_tag_into(self.data_buffer.as_mut_slice()))
+                todo!()
+                // Some(record.tag.extract_tag_into(self.data_buffer.as_mut_slice()))
             }
             TlvBytesState::SendLength => {
                 // after sending length, data follows (if any)
@@ -628,25 +697,15 @@ where
                         let n = bytes.len() as u64;
                         match Value::u64_repr_length(n) {
                             ElementDataLength::Bytes1 => {
-                                self.data_buffer[0] = n as u8;
                                 if n == 0 {
                                     // No data available, can send the next item
                                     self.state = TlvBytesState::SendControl;
                                 }
-                                Some(self.data_buffer.split_at(1).0)
+                                Some(self.value_store.write_u8(n as u8))
                             }
-                            ElementDataLength::Bytes2 => {
-                                LittleEndian::write_u16(self.data_buffer.as_mut_slice(), n as u16);
-                                Some(self.data_buffer.split_at(2).0)
-                            }
-                            ElementDataLength::Bytes4 => {
-                                LittleEndian::write_u32(self.data_buffer.as_mut_slice(), n as u32);
-                                Some(self.data_buffer.split_at(4).0)
-                            }
-                            ElementDataLength::Bytes8 => {
-                                LittleEndian::write_u64(self.data_buffer.as_mut_slice(), n);
-                                Some(self.data_buffer.split_at(8).0)
-                            }
+                            ElementDataLength::Bytes2 => Some(self.value_store.write_u16(n as u16)),
+                            ElementDataLength::Bytes4 => Some(self.value_store.write_u32(n as u32)),
+                            ElementDataLength::Bytes8 => Some(self.value_store.write_u64(n)),
                         }
                     }
                     _ => unreachable!(),
@@ -659,49 +718,19 @@ where
                 match self.current_record.unwrap().value {
                     Value::Utf8(bytes) | Value::Bytes(bytes) => Some(bytes),
                     Value::Signed(n) => match Value::i64_repr_length(n) {
-                        ElementDataLength::Bytes1 => {
-                            self.data_buffer[0] = (n as i8) as u8;
-                            Some(self.data_buffer.split_at(1).0)
-                        }
-                        ElementDataLength::Bytes2 => {
-                            LittleEndian::write_i16(self.data_buffer.as_mut_slice(), n as i16);
-                            Some(self.data_buffer.split_at(2).0)
-                        }
-                        ElementDataLength::Bytes4 => {
-                            LittleEndian::write_i32(self.data_buffer.as_mut_slice(), n as i32);
-                            Some(self.data_buffer.split_at(4).0)
-                        }
-                        ElementDataLength::Bytes8 => {
-                            LittleEndian::write_i64(self.data_buffer.as_mut_slice(), n);
-                            Some(self.data_buffer.split_at(8).0)
-                        }
+                        ElementDataLength::Bytes1 => Some(self.value_store.write_i8(n as i8)),
+                        ElementDataLength::Bytes2 => Some(self.value_store.write_i16(n as i16)),
+                        ElementDataLength::Bytes4 => Some(self.value_store.write_i32(n as i32)),
+                        ElementDataLength::Bytes8 => Some(self.value_store.write_i64(n)),
                     },
                     Value::Unsigned(n) => match Value::u64_repr_length(n) {
-                        ElementDataLength::Bytes1 => {
-                            self.data_buffer[0] = n as u8;
-                            Some(self.data_buffer.split_at(1).0)
-                        }
-                        ElementDataLength::Bytes2 => {
-                            LittleEndian::write_u16(self.data_buffer.as_mut_slice(), n as u16);
-                            Some(self.data_buffer.split_at(2).0)
-                        }
-                        ElementDataLength::Bytes4 => {
-                            LittleEndian::write_u32(self.data_buffer.as_mut_slice(), n as u32);
-                            Some(self.data_buffer.split_at(4).0)
-                        }
-                        ElementDataLength::Bytes8 => {
-                            LittleEndian::write_u64(self.data_buffer.as_mut_slice(), n);
-                            Some(self.data_buffer.split_at(8).0)
-                        }
+                        ElementDataLength::Bytes1 => Some(self.value_store.write_u8(n as u8)),
+                        ElementDataLength::Bytes2 => Some(self.value_store.write_u16(n as u16)),
+                        ElementDataLength::Bytes4 => Some(self.value_store.write_u32(n as u32)),
+                        ElementDataLength::Bytes8 => Some(self.value_store.write_u64(n)),
                     },
-                    Value::Float(n) => {
-                        LittleEndian::write_f32(self.data_buffer.as_mut_slice(), n);
-                        Some(self.data_buffer.split_at(4).0)
-                    }
-                    Value::Double(n) => {
-                        LittleEndian::write_f64(self.data_buffer.as_mut_slice(), n);
-                        Some(self.data_buffer.split_at(4).0)
-                    }
+                    Value::Float(n) => Some(self.value_store.write_f32(n)),
+                    Value::Double(n) => Some(self.value_store.write_f64(n)),
                     _ => unreachable!(),
                 }
             }
