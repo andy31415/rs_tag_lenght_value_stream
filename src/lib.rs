@@ -1525,6 +1525,26 @@ mod tests {
                 tag: TagValue::Implicit { tag: 104 },
                 value: Value::Double(11.125),
             },
+            Record {
+                tag: TagValue::Implicit { tag: 105 },
+                value: Value::Bool(true),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 106 },
+                value: Value::Bool(false),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 107 },
+                value: Value::Unsigned(0xFFFFFFFF),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 108 },
+                value: Value::Unsigned(0x100000000),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 108 },
+                value: Value::Signed(0x100000000),
+            },
         ];
 
         let mut streamer = streaming_iterator::convert(records.iter());
