@@ -118,9 +118,11 @@ impl TagValue {
     /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 0, tag: 0xFFFF}.tag_type(), TagType::CommonProfile2byte);
     /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 0, tag: 0x10000}.tag_type(), TagType::CommonProfile4byte);
     /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 1, tag: 1}.tag_type(), TagType::FullyQualified6byte);
-    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 10, tag: 0x12345678}.tag_type(), TagType::FullyQualified6byte);
-    /// assert_eq!(TagValue::Full{vendor_id: 1, profile_id: 0, tag: 0}.tag_type(), TagType::FullyQualified8byte);
-    /// assert_eq!(TagValue::Full{vendor_id: 1, profile_id: 2, tag: 3}.tag_type(), TagType::FullyQualified8byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 10, tag: 0x1234}.tag_type(), TagType::FullyQualified6byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 1, profile_id: 10, tag: 1}.tag_type(), TagType::FullyQualified6byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 0, profile_id: 10, tag: 0x12345678}.tag_type(), TagType::FullyQualified8byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 1, profile_id: 0, tag: 0}.tag_type(), TagType::FullyQualified6byte);
+    /// assert_eq!(TagValue::Full{vendor_id: 1, profile_id: 2, tag: 3}.tag_type(), TagType::FullyQualified6byte);
     /// ```
     pub fn tag_type(&self) -> TagType {
         match self {
@@ -152,13 +154,18 @@ impl TagValue {
     pub fn extract_tag_into<'a>(&self, dest: &'a mut [u8]) -> &'a [u8] {
         match self {
             TagValue::Anonymous => dest.split_at(0).0,
-            TagValue::ContextSpecific { tag } | TagValue::Implicit { tag } => {
+            TagValue::ContextSpecific { tag }  => {
+                assert!(*tag & 0xFF == *tag);
+                dest[0] = *tag as u8;
+                &dest[0..1]
+            }
+            TagValue::Implicit { tag } => {
                 if *tag & 0xFFFF == *tag {
                     LittleEndian::write_u16(dest, *tag as u16);
-                    dest.split_at(2).0
+                    &dest[0..2]
                 } else {
                     LittleEndian::write_u32(dest, *tag);
-                    dest.split_at(2).0
+                    &dest[0..4]
                 }
             }
             TagValue::Full {
@@ -167,7 +174,7 @@ impl TagValue {
                 tag,
             } if ((*tag & 0xFFFF) == *tag) => {
                 LittleEndian::write_u16(dest, *tag as u16);
-                dest.split_at(2).0
+                &dest[0..2]
             }
             TagValue::Full {
                 vendor_id: 0,
@@ -175,7 +182,7 @@ impl TagValue {
                 tag,
             } => {
                 LittleEndian::write_u32(dest, *tag);
-                dest.split_at(4).0
+                &dest[0..4]
             }
             TagValue::Full {
                 vendor_id,
@@ -189,7 +196,7 @@ impl TagValue {
                     let (_, rest) = rest.split_at_mut(2);
                     LittleEndian::write_u16(rest, *tag as u16);
                 }
-                dest.split_at(6).0
+                &dest[0..6]
             }
             TagValue::Full {
                 vendor_id,
@@ -203,7 +210,7 @@ impl TagValue {
                     let (_, rest) = rest.split_at_mut(2);
                     LittleEndian::write_u32(rest, *tag);
                 }
-                dest.split_at(8).0
+                &dest[0..8]
             }
         }
     }
@@ -596,7 +603,7 @@ impl TemporaryBytesStore {
 /// let mut records = streaming_iterator::convert(records.iter());
 /// let mut bytes = TlvBytes::new(&mut records);
 ///
-/// assert_eq!(bytes.next(), Some([0b1111_0101].as_slice()));                   // fully qualified structure start (6 byte)
+/// assert_eq!(bytes.next(), Some([0b1101_0101].as_slice()));                   // fully qualified structure start (6 byte)
 /// assert_eq!(bytes.next(), Some([0xBB, 0xAA, 0xDD, 0xCC, 1, 0].as_slice()));  // tag: AABB/CCDD/1
 /// assert_eq!(bytes.next(), Some([0b0001_1000].as_slice()));                   // anonymous tag, container end
 ///
