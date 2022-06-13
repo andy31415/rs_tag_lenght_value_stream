@@ -1444,6 +1444,10 @@ mod tests {
 
     #[test]
     fn encode_decode() {
+        // NOTE: technically 4 and 8 bytes strings should be possible, however it is unlikely
+        //       that we have RAM to generate such things especially on embedded. So test 256 for now.
+        let many_bytes : [u8; 256] = [0; 256];
+        
         let records = [
             Record {
                 tag: TagValue::Full {
@@ -1488,6 +1492,18 @@ mod tests {
             Record {
                 tag: TagValue::Anonymous,
                 value: Value::ContainerEnd,
+            },
+            Record {
+                tag: TagValue::Full {
+                    vendor_id: 1,
+                    profile_id: 2,
+                    tag: 0xAABB,
+                },
+                value: Value::Null
+            },
+            Record {
+                tag: TagValue::ContextSpecific { tag: 0x12 },
+                value: Value::Bytes(&many_bytes),
             },
         ];
 
