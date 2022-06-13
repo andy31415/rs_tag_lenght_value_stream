@@ -505,32 +505,34 @@ pub trait RecordStreamer<'a> {
     fn next_record(&'a mut self) -> Option<Record<'a>>;
 }
 
-struct IteratoRecords<Iter> 
-{
+pub struct IteratorRecords<Iter> {
     iter: Iter,
 }
 
-impl<'a, Iter> IteratoRecords<Iter> 
-where Iter: Iterator<Item=Record<'a>>
-{
+impl<'a, Iter> IteratorRecords<Iter> {
     pub fn new(iter: Iter) -> Self {
-        Self {iter}
+        Self { iter }
     }
 }
 
-impl<'a, Iter> RecordStreamer<'a> for  IteratoRecords<Iter> 
-where Iter: Iterator<Item=Record<'a>> {
+impl<'a, Iter> RecordStreamer<'a> for IteratorRecords<Iter>
+where
+    Iter: Iterator<Item = &'a Record<'a>>,
+{
     fn next_record(&'a mut self) -> Option<Record<'a>> {
-        self.iter.next()
+        match self.iter.next() {
+            Some(value) => Some(*value),
+            None => None,
+        }
     }
 }
 
 /// Represents a transformation of an iterator of TLV Records
 /// into the corresponding sequence of bytes.
-/// 
+///
 /// ```
 /// # use tag_length_value_stream::*;
-/// 
+///
 /// let records = [
 ///     Record {
 ///        tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
@@ -545,8 +547,23 @@ where Iter: Iterator<Item=Record<'a>> {
 ///        value: Value::ContainerEnd,
 ///     },
 /// ];
-/// 
-/// let bytes = TlvBytes::new(RecordStreamer::new(records.iter()));
+///
+/// let streamer = IteratorRecords::new(records.into_iter());
+/// let mut bytes = TlvBytes::new(streamer);
+///
+/// let expected_slices = [
+///     [0xF5].as_slice(), // Fully qualified structure start
+///     [0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice(), // AABB/CCDD/1
+/// ];
+///
+///
+/// while let Some(slice) = bytes.next_slice() {
+///    assert_eq!(slice, [0]);
+/// }
+///
+/// // assert_eq!(bytes.next_slice(), Some([0xF5].as_slice())); // Fully qualified structure start
+/// // assert_eq!(bytes.next_slice(), Some([0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice())); // AABB/CCDD/1
+/// // assert_eq!(bytes.next_slice(), None);
 /// ```
 pub struct TlvBytes<'a, Data> {
     data: Data,
@@ -560,7 +577,8 @@ pub struct TlvBytes<'a, Data> {
 }
 
 impl<'a, Data> TlvBytes<'a, Data>
-where Data: RecordStreamer<'a>
+where
+    Data: RecordStreamer<'a>,
 {
     pub fn new(data: Data) -> Self {
         Self {
@@ -570,8 +588,8 @@ where Data: RecordStreamer<'a>
             data_buffer: [0; 8],
         }
     }
-
-    pub fn next_slice(&'a mut self) -> Option<&'a [u8]> {
+    
+    pub fn next_slice(&'a mut self) -> Option<&'a [u8]>{
         match self.state {
             TlvBytesState::SendControl => {
                 self.current_record = self.data.next_record();
