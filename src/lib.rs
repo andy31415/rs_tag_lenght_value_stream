@@ -504,7 +504,7 @@ enum TlvBytesState {
 }
 
 /// Represents a general storage of data.
-/// 
+///
 /// Supports writing up to 8-byte values.
 #[derive(Debug, Default)]
 struct TemporaryBytesStore {
@@ -513,6 +513,7 @@ struct TemporaryBytesStore {
 }
 
 impl TemporaryBytesStore {
+    /// Get the current value as a slice.
     pub fn current(&self) -> &[u8] {
         &self.data[0..self.data_len]
     }
@@ -575,6 +576,29 @@ impl TemporaryBytesStore {
 /// Represents a transformation of an iterator of TLV Records
 /// into the corresponding sequence of bytes.
 ///
+/// ```
+/// # use tag_length_value_stream::{*, raw_types::*};
+/// # use streaming_iterator::*;
+/// 
+/// let records = [
+///   Record {
+///     tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1},
+///     value: Value::ContainerStart(ContainerType::Structure),
+///   },
+///   Record {
+///     tag: TagValue::Anonymous,
+///     value: Value::ContainerEnd,
+///   },
+/// ];
+///
+/// let mut records = streaming_iterator::convert(records.iter());
+/// let mut bytes = TlvBytes::new(&mut records);
+/// 
+/// assert_eq!(bytes.next(), Some([0b1111_0101].as_slice()));  // fully qualified structure start
+/// assert_eq!(bytes.next(), Some([0xBB, 0xAA, 0xDD, 0xCC, 1, 0, 0, 0].as_slice()));  // tag: AABB/CCDD/1
+/// assert_eq!(bytes.next(), Some([0b0001_1000].as_slice()));  // anonymous tag, container end
+///
+/// ```
 pub struct TlvBytes<'a, Data> {
     data: &'a mut Data,
     value_store: TemporaryBytesStore,
