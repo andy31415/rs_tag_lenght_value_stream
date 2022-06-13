@@ -579,7 +579,7 @@ impl TemporaryBytesStore {
 /// ```
 /// # use tag_length_value_stream::{*, raw_types::*};
 /// # use streaming_iterator::*;
-/// 
+///
 /// let records = [
 ///   Record {
 ///     tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1},
@@ -593,7 +593,7 @@ impl TemporaryBytesStore {
 ///
 /// let mut records = streaming_iterator::convert(records.iter());
 /// let mut bytes = TlvBytes::new(&mut records);
-/// 
+///
 /// assert_eq!(bytes.next(), Some([0b1111_0101].as_slice()));  // fully qualified structure start
 /// assert_eq!(bytes.next(), Some([0xBB, 0xAA, 0xDD, 0xCC, 1, 0, 0, 0].as_slice()));  // tag: AABB/CCDD/1
 /// assert_eq!(bytes.next(), Some([0b0001_1000].as_slice()));  // anonymous tag, container end
@@ -723,6 +723,53 @@ mod tests {
     use crate::raw_types::ElementDataLength;
 
     use super::*;
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum AccumulateError {
+        OutOfSpace,
+    }
+
+    #[derive(Debug)]
+    struct ByteAccumulator {
+        data: [u8; 4096],
+        data_len: usize,
+    }
+
+    impl Default for ByteAccumulator {
+        fn default() -> Self {
+            Self {
+                data: [0; 4096],
+                data_len: 0,
+            }
+        }
+    }
+
+    impl ByteAccumulator {
+        fn buffer(&self) -> &[u8] {
+            &self.data[0..self.data_len]
+        }
+
+        fn append(&mut self, data: &[u8]) -> Result<(), AccumulateError> {
+            if data.len() + self.data_len > self.data.len() {
+                return Err(AccumulateError::OutOfSpace);
+            }
+
+            self.data[self.data_len..(self.data_len + data.len())].copy_from_slice(data);
+            self.data_len += data.len();
+
+            Ok(())
+        }
+
+        fn accumulate<Iter>(&mut self, source: &mut Iter) -> Result<(), AccumulateError>
+        where
+            Iter: StreamingIterator<Item = [u8]>,
+        {
+            while let Some(buffer) = source.next() {
+                self.append(buffer)?;
+            }
+            Ok(())
+        }
+    }
 
     #[test]
     fn read_tag_value_works() {
@@ -1385,4 +1432,55 @@ mod tests {
 
         assert_eq!(idx, expected_slices.len());
     }
+
+    #[test]
+    fn encode_decode() {
+        let records = [
+            Record {
+                tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1},
+                value: Value::ContainerStart(ContainerType::Structure),
+            },
+            Record {
+                tag: TagValue::Full { vendor_id: 0, profile_id: 0xCCDD, tag: 123},
+                value: Value::ContainerStart(ContainerType::Array),
+            },
+            Record {
+                tag: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 100},
+                value: Value::ContainerStart(ContainerType::List),
+            },
+            Record {
+                tag: TagValue::Full { vendor_id: 0, profile_id: 0, tag: 0xAABBCCDD},
+                value: Value::Bytes(b"BYTES"),
+            },
+            Record {
+                tag: TagValue::ContextSpecific { tag: 0x12 },
+                value: Value::Utf8(b"STR-UTF8"),
+            },
+            Record {
+                tag: TagValue::Implicit { tag: 1 },
+                value: Value::Unsigned(10),
+            },
+            Record {
+                tag: TagValue::Anonymous,
+                value: Value::ContainerEnd,
+            },
+        ];
+
+        let mut streamer = streaming_iterator::convert(records.iter());
+        let mut bytes = TlvBytes::new(&mut streamer);
+        
+        let mut accumulator = ByteAccumulator::default();
+        assert_eq!(accumulator.accumulate(&mut bytes), Ok(()));
+        
+        let parser = Parser::new(accumulator.buffer());
+        
+        for (parsed, original) in parser.zip(records.iter()) {
+            assert_eq!(parsed, *original);
+        }
+
+        let parser = Parser::new(accumulator.buffer());
+        assert_eq!(parser.count(), records.len());
+        
+    }
+    
 }
