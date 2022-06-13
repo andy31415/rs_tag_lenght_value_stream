@@ -557,12 +557,12 @@ where
 /// ];
 ///
 ///
-/// while let Some(slice) = bytes.next_slice() {
-///    assert_eq!(slice, [0]);
-/// }
+/// // while let Some(slice) = bytes.next_slice() {
+/// //   assert_eq!(slice, [0]);
+/// // }
 ///
-/// // assert_eq!(bytes.next_slice(), Some([0xF5].as_slice())); // Fully qualified structure start
-/// // assert_eq!(bytes.next_slice(), Some([0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice())); // AABB/CCDD/1
+/// assert_eq!(bytes.next_slice(), Some([0xF5].as_slice())); // Fully qualified structure start
+/// assert_eq!(bytes.next_slice(), Some([0xAA, 0xBB, 0xCC, 0xDD, 1, 0, 0, 0].as_slice())); // AABB/CCDD/1
 /// // assert_eq!(bytes.next_slice(), None);
 /// ```
 pub struct TlvBytes<'a, Data> {
