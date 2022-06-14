@@ -8,6 +8,8 @@ use byteorder::{ByteOrder, LittleEndian};
 use raw_types::{ElementDataLength, ElementType, TagType};
 use streaming_iterator::StreamingIterator;
 
+use core::primitive::{i8, i16, i32, i64, u8, u16, u32, u64};
+
 /// Represents an actual value read from a TLV record
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Value<'a> {
@@ -23,37 +25,42 @@ pub enum Value<'a> {
     ContainerEnd,
 }
 
+struct Min {}
+impl Min {
+    pub const I8: i64 = (i8::MIN as i64);
+    pub const I16: i64 = (i16::MIN as i64);
+    pub const I32: i64 = (i32::MIN as i64);
+}
+
+struct Max {}
+impl Max {
+    pub const U8: u64 = (u8::MAX as u64);
+    pub const U16: u64 = (u16::MAX as u64);
+    pub const U32: u64 = (u32::MAX as u64);
+
+    pub const I8: i64 = (i8::MAX as i64);
+    pub const I16: i64 = (i16::MAX as i64);
+    pub const I32: i64 = (i32::MAX as i64);
+}
+
+
 impl<'a> Value<'a> {
     fn u64_repr_length(len: u64) -> ElementDataLength {
-        if (len as u8) as u64 == len {
-            return ElementDataLength::Bytes1;
+        match len {
+            0..= Max::U8 => ElementDataLength::Bytes1,
+            0..= Max::U16 => ElementDataLength::Bytes2,
+            0..= Max::U32 => ElementDataLength::Bytes4,
+            _ => ElementDataLength::Bytes8,
         }
-
-        if (len as u16) as u64 == len {
-            return ElementDataLength::Bytes2;
-        }
-
-        if (len as u32) as u64 == len {
-            return ElementDataLength::Bytes4;
-        }
-
-        ElementDataLength::Bytes8
     }
 
     fn i64_repr_length(len: i64) -> ElementDataLength {
-        if (len as i8) as i64 == len {
-            return ElementDataLength::Bytes1;
+        match len {
+            Min::I8  ..= Max::I8 => ElementDataLength::Bytes1,
+            Min::I16 ..= Max::I16 => ElementDataLength::Bytes2,
+            Min::I32 ..= Max::I32 => ElementDataLength::Bytes4,
+            _ => ElementDataLength::Bytes8,
         }
-
-        if (len as i16) as i64 == len {
-            return ElementDataLength::Bytes2;
-        }
-
-        if (len as i32) as i64 == len {
-            return ElementDataLength::Bytes4;
-        }
-
-        ElementDataLength::Bytes8
     }
 
     pub fn get_control_byte_bits(&self) -> u8 {
