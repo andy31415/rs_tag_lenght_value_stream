@@ -45,6 +45,7 @@ impl Max {
 
 impl<'a> Value<'a> {
     fn u64_repr_length(len: u64) -> ElementDataLength {
+        #[allow(clippy::match_overlapping_arm)]
         match len {
             0..=Max::U8 => ElementDataLength::Bytes1,
             0..=Max::U16 => ElementDataLength::Bytes2,
@@ -54,6 +55,7 @@ impl<'a> Value<'a> {
     }
 
     fn i64_repr_length(len: i64) -> ElementDataLength {
+        #[allow(clippy::match_overlapping_arm)]
         match len {
             Min::I8..=Max::I8 => ElementDataLength::Bytes1,
             Min::I16..=Max::I16 => ElementDataLength::Bytes2,
