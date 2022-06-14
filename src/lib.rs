@@ -600,7 +600,7 @@ impl TemporaryBytesStore {
 ///   },
 /// ];
 ///
-/// let mut records = streaming_iterator::convert(records.iter());
+/// let mut records = streaming_iterator::convert(records.iter().copied());
 /// let mut bytes = TlvBytes::new(&mut records);
 ///
 /// assert_eq!(bytes.next(), Some([0b1101_0101].as_slice()));                   // fully qualified structure start (6 byte)
@@ -616,7 +616,7 @@ pub struct TlvBytes<'a, Data> {
 
 impl<'a, Data> TlvBytes<'a, Data>
 where
-    Data: StreamingIterator<Item = &'a Record<'a>>,
+    Data: StreamingIterator<Item = Record<'a>>,
 {
     pub fn new(data: &'a mut Data) -> Self {
         Self {
@@ -629,7 +629,7 @@ where
 
 impl<'a, Data> StreamingIterator for TlvBytes<'a, Data>
 where
-    Data: StreamingIterator<Item = &'a Record<'a>>,
+    Data: StreamingIterator<Item = Record<'a>>,
 {
     type Item = [u8];
 
@@ -1420,7 +1420,7 @@ mod tests {
             },
         ];
 
-        let mut streamer = streaming_iterator::convert(records.iter());
+        let mut streamer = streaming_iterator::convert(records.iter().copied());
         let mut bytes = TlvBytes::new(&mut streamer);
 
         let expected_slices = [
@@ -1547,7 +1547,7 @@ mod tests {
             },
         ];
 
-        let mut streamer = streaming_iterator::convert(records.iter());
+        let mut streamer = streaming_iterator::convert(records.iter().copied());
         let mut bytes = TlvBytes::new(&mut streamer);
 
         let mut accumulator = ByteAccumulator::default();

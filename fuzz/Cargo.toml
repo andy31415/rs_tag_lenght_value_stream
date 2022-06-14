@@ -10,6 +10,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+streaming-iterator = "0.1.5"
 
 [dependencies.tag_length_value_stream]
 path = ".."
@@ -21,5 +22,11 @@ members = ["."]
 [[bin]]
 name = "parse_only"
 path = "fuzz_targets/parse_only.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_and_write"
+path = "fuzz_targets/parse_and_write.rs"
 test = false
 doc = false
