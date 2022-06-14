@@ -4,9 +4,9 @@ use libfuzzer_sys::fuzz_target;
 use tag_length_value_stream::Parser;
 
 fuzz_target!(|data: &[u8]| {
-    let parser = Parser::new(data);
+    let mut parser = Parser::new(data);
 
-    while let Some(record) = parser.next() {
+    while let Some(_record) = parser.next() {
         // do nothing, just consume
     }
 });
