@@ -8,7 +8,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use raw_types::{ElementDataLength, ElementType, TagType};
 use streaming_iterator::StreamingIterator;
 
-use core::primitive::{i8, i16, i32, i64, u8, u16, u32, u64};
+use core::primitive::{i16, i32, i64, i8, u16, u32, u64, u8};
 
 /// Represents an actual value read from a TLV record
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -43,22 +43,21 @@ impl Max {
     pub const I32: i64 = (i32::MAX as i64);
 }
 
-
 impl<'a> Value<'a> {
     fn u64_repr_length(len: u64) -> ElementDataLength {
         match len {
-            0..= Max::U8 => ElementDataLength::Bytes1,
-            0..= Max::U16 => ElementDataLength::Bytes2,
-            0..= Max::U32 => ElementDataLength::Bytes4,
+            0..=Max::U8 => ElementDataLength::Bytes1,
+            0..=Max::U16 => ElementDataLength::Bytes2,
+            0..=Max::U32 => ElementDataLength::Bytes4,
             _ => ElementDataLength::Bytes8,
         }
     }
 
     fn i64_repr_length(len: i64) -> ElementDataLength {
         match len {
-            Min::I8  ..= Max::I8 => ElementDataLength::Bytes1,
-            Min::I16 ..= Max::I16 => ElementDataLength::Bytes2,
-            Min::I32 ..= Max::I32 => ElementDataLength::Bytes4,
+            Min::I8..=Max::I8 => ElementDataLength::Bytes1,
+            Min::I16..=Max::I16 => ElementDataLength::Bytes2,
+            Min::I32..=Max::I32 => ElementDataLength::Bytes4,
             _ => ElementDataLength::Bytes8,
         }
     }
