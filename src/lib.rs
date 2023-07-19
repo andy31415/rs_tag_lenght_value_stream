@@ -27,7 +27,6 @@ pub enum Value<'a> {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ParseError {
-    EndOfStream,    // Reached end of buffer
     BufferUnderrun, // Insufficient data to decode
 }
 
@@ -295,7 +294,7 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 /// Parsing an invalid stream (tag terminated early)
 ///
 /// ```
-/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType, ParseResult};
+/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType, ParseResult, ParseError};
 ///
 /// let mut parser = Parser::new(&[
 ///     0xD5, 0xBB, 0xAA, 0xDD, 0xCC, 0x01, 0x00,  // tag: 0xAABB/0xCCDD/1, structure start
@@ -308,19 +307,39 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 ///             value: Value::ContainerStart(ContainerType::Structure)
 ///         },
 /// )));
+/// assert_eq!(parser.next(), Some(ParseResult::Error(ParseError::BufferUnderrun)));
 /// assert!(!parser.done());
 ///
 /// assert_eq!(parser.next(), None);
 /// assert!(!parser.done());  // Parser NOT done as input data still available, but cannot be parsed
 /// ```
+///
+/// Parsing an invalid stream (full tag, no data)
+///
+/// ```
+/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType, ParseResult, ParseError};
+///
+/// let mut parser = Parser::new(&[
+///    0x24
+/// ]);
+///
+/// assert_eq!(parser.next(), Some(ParseResult::Error(ParseError::BufferUnderrun)));
+/// assert!(!parser.done());
+/// assert_eq!(parser.next(), None);
+/// assert!(!parser.done());
+/// ```
 #[derive(Debug)]
 pub struct Parser<'a> {
     data: &'a [u8],
+    errored_out: bool,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data }
+        Self {
+            data,
+            errored_out: false,
+        }
     }
 
     /// Check if the parser was fully consumed
@@ -331,7 +350,7 @@ impl<'a> Parser<'a> {
     pub fn done(&self) -> bool {
         self.data.is_empty()
     }
-    
+
     /// How many bytes left to parse for data
     pub fn remaining(&self) -> usize {
         self.data.len()
@@ -341,7 +360,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn read_tag_value(
         tag_type: TagType,
         data: &[u8],
-    ) -> Option<IncrementalParseResult<TagValue>> {
+    ) -> Result<IncrementalParseResult<TagValue>, ParseError> {
         let tag_length = match tag_type {
             TagType::Anonymous => 0,
             TagType::ContextSpecific1byte => 1,
@@ -353,7 +372,7 @@ impl<'a> Parser<'a> {
 
         if data.len() < tag_length {
             // Cannot parse, return nothing and do not consume the data
-            return None;
+            return Err(ParseError::BufferUnderrun);
         }
 
         let (tag_buffer, remaining_input) = data.split_at(tag_length);
@@ -384,7 +403,7 @@ impl<'a> Parser<'a> {
             },
         };
 
-        Some(IncrementalParseResult {
+        Ok(IncrementalParseResult {
             parsed,
             remaining_input,
         })
@@ -489,7 +508,7 @@ impl<'a> Parser<'a> {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ParseResult<'a> {
     Record(Record<'a>),
-    Error,
+    Error(ParseError),
 }
 
 /// Iterating over a Parser means getting the underlying TLV data entries
@@ -504,15 +523,28 @@ impl<'a> Iterator for Parser<'a> {
     type Item = ParseResult<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.errored_out {
+            return None;
+        }
+
         match self.data.split_first() {
             None => None,
             Some((control, rest)) => {
-                let tag_parse = Parser::read_tag_value(TagType::for_control(*control), rest)?;
+                let tag_parse = match Parser::read_tag_value(TagType::for_control(*control), rest) {
+                    Err(e) => {
+                        self.errored_out = true;
+                        return Some(ParseResult::Error(e));
+                    }
+                    Ok(v) => v,
+                };
                 let value_parse = match Parser::read_value(
                     ElementType::for_control(*control)?,
                     tag_parse.remaining_input,
                 ) {
-                    Err(_) => return Some(ParseResult::Error),
+                    Err(e) => {
+                        self.errored_out = true;
+                        return Some(ParseResult::Error(e));
+                    }
                     Ok(v) => v,
                 };
 
@@ -812,7 +844,7 @@ mod tests {
         let empty = [].as_slice();
         assert_eq!(
             Parser::read_tag_value(TagType::Anonymous, empty),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Anonymous,
                 remaining_input: empty
             })
@@ -821,7 +853,7 @@ mod tests {
         let some_bytes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].as_slice();
         assert_eq!(
             Parser::read_tag_value(TagType::Anonymous, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Anonymous,
                 remaining_input: some_bytes
             })
@@ -829,7 +861,7 @@ mod tests {
 
         assert_eq!(
             Parser::read_tag_value(TagType::ContextSpecific1byte, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::ContextSpecific { tag: 1 },
                 remaining_input: [2, 3, 4, 5, 6, 7, 8, 9, 10].as_slice()
             })
@@ -837,7 +869,7 @@ mod tests {
 
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile2byte, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Full {
                     vendor_id: 0,
                     profile_id: 0,
@@ -849,7 +881,7 @@ mod tests {
 
         assert_eq!(
             Parser::read_tag_value(TagType::Implicit2byte, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Implicit { tag: 0x0201 },
                 remaining_input: [3, 4, 5, 6, 7, 8, 9, 10].as_slice()
             })
@@ -857,7 +889,7 @@ mod tests {
 
         assert_eq!(
             Parser::read_tag_value(TagType::Implicit4byte, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Implicit { tag: 0x04030201 },
                 remaining_input: [5, 6, 7, 8, 9, 10].as_slice()
             })
@@ -865,7 +897,7 @@ mod tests {
 
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile4byte, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Full {
                     vendor_id: 0,
                     profile_id: 0,
@@ -877,7 +909,7 @@ mod tests {
 
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified6byte, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Full {
                     vendor_id: 0x0201,
                     profile_id: 0x0403,
@@ -889,7 +921,7 @@ mod tests {
 
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified8byte, some_bytes),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: TagValue::Full {
                     vendor_id: 0x0201,
                     profile_id: 0x0403,
@@ -903,40 +935,43 @@ mod tests {
     #[test]
     fn read_tag_value_fails_on_short() {
         let empty = [].as_slice();
-        assert_eq!(Parser::read_tag_value(TagType::Implicit2byte, empty), None);
+        assert_eq!(
+            Parser::read_tag_value(TagType::Implicit2byte, empty),
+            Err(ParseError::BufferUnderrun)
+        );
 
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile2byte, empty),
-            None
+            Err(ParseError::BufferUnderrun)
         );
 
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified6byte, empty),
-            None
+            Err(ParseError::BufferUnderrun)
         );
 
         let one_byte = [1].as_slice();
 
         assert_eq!(
             Parser::read_tag_value(TagType::CommonProfile2byte, one_byte),
-            None
+            Err(ParseError::BufferUnderrun)
         );
 
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified6byte, one_byte),
-            None
+            Err(ParseError::BufferUnderrun)
         );
 
         let four_bytes = [1, 2, 3, 4].as_slice();
 
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified6byte, four_bytes),
-            None
+            Err(ParseError::BufferUnderrun)
         );
 
         assert_eq!(
             Parser::read_tag_value(TagType::FullyQualified8byte, four_bytes),
-            None
+            Err(ParseError::BufferUnderrun)
         );
     }
 
