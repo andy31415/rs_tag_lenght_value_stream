@@ -1,4 +1,3 @@
-
 /// Defines a valid data length for various length-prefixed data
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ElementDataLength {
@@ -19,7 +18,7 @@ pub enum ElementDataLength {
 pub enum ContainerType {
     Structure,
     List,
-    Array
+    Array,
 }
 
 /// Defines all element types supported by the TLV encoding for control blocks
@@ -93,13 +92,11 @@ impl ElementType {
                 ElementDataLength::Bytes8 => 0b10011,
             },
             ElementType::Null => 0b10100,
-            ElementType::ContainerStart(c) =>{ 
-                match c {
-                    ContainerType::Structure => 0b10101,
-                    ContainerType::Array => 0b10110,
-                    ContainerType::List => 0b10111,
-                }
-            }
+            ElementType::ContainerStart(c) => match c {
+                ContainerType::Structure => 0b10101,
+                ContainerType::Array => 0b10110,
+                ContainerType::List => 0b10111,
+            },
             ElementType::ContainerEnd => 0b11000,
         }
     }
@@ -121,10 +118,10 @@ impl ElementType {
     /// |control (1-byte)|   |tag (0-8 bytes)|   |length (1-4 bytes)|   |data (length bytes)|
     /// +----------------+   +---------------+   +------------------+   +-------------------+
     /// ```
-    /// 
+    ///
     /// Note that container types (structs, lists) are not sized and instead
     /// use an 'end of container' tag to delimit them.
-    /// 
+    ///
     /// ```
     /// # use tag_length_value_stream::raw_types::*;
     ///
@@ -137,7 +134,10 @@ impl ElementType {
     /// assert!(!ElementType::ContainerEnd.is_sized_data());
     /// ```
     pub fn is_sized_data(&self) -> bool {
-        matches!(self, ElementType::Utf8String(_) | ElementType::ByteString(_))
+        matches!(
+            self,
+            ElementType::Utf8String(_) | ElementType::ByteString(_)
+        )
     }
 
     /// Extracts the element type from a control byte.
@@ -206,12 +206,12 @@ impl TagType {
     const SHIFT: u8 = 5;
 
     /// Gets the bitmask corresponding to this tag type.
-    /// 
+    ///
     /// The bitmask is already shifted
-    /// 
+    ///
     /// ```
     /// # use tag_length_value_stream::raw_types::TagType;
-    /// 
+    ///
     /// assert_eq!(TagType::Anonymous.get_control_byte_bits(), 0b0000_0000);
     /// assert_eq!(TagType::ContextSpecific1byte.get_control_byte_bits(), 0b0010_0000);
     /// assert_eq!(TagType::Implicit4byte.get_control_byte_bits(), 0b1010_0000);
