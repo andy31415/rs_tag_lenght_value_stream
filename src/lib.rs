@@ -25,6 +25,12 @@ pub enum Value<'a> {
     ContainerEnd,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ParseError {
+    EndOfStream,    // Reached end of buffer
+    BufferUnderrun, // Insufficient data to decode
+}
+
 struct Min {}
 impl Min {
     pub const I8: i64 = (i8::MIN as i64);
@@ -327,6 +333,11 @@ impl<'a> Parser<'a> {
     pub fn done(&self) -> bool {
         self.data.is_empty()
     }
+    
+    /// How many bytes left to parse for data
+    pub fn remaining(&self) -> usize {
+        self.data.len()
+    }
 
     /// Attempts to parse the tag information for the given value array
     pub(crate) fn read_tag_value(
@@ -385,15 +396,15 @@ impl<'a> Parser<'a> {
     pub(crate) fn read_value(
         element_type: ElementType,
         data: &'a [u8],
-    ) -> Option<IncrementalParseResult<'a, Value<'a>>> {
-        match element_type {
+    ) -> Result<IncrementalParseResult<'a, Value<'a>>, ParseError> {
+        Ok(match element_type {
             ElementType::Unsigned(n) | ElementType::Signed(n) => {
                 let value_len = match n {
                     raw_types::ElementDataLength::Bytes1 if !data.is_empty() => 1,
                     raw_types::ElementDataLength::Bytes2 if data.len() >= 2 => 2,
                     raw_types::ElementDataLength::Bytes4 if data.len() >= 4 => 4,
                     raw_types::ElementDataLength::Bytes8 if data.len() >= 8 => 8,
-                    _ => return None, // insufficient buffer space
+                    _ => return Err(ParseError::BufferUnderrun),
                 };
 
                 let parsed = {
@@ -404,44 +415,44 @@ impl<'a> Parser<'a> {
                     }
                 };
 
-                Some(IncrementalParseResult {
+                IncrementalParseResult {
                     parsed,
                     remaining_input: data.split_at(value_len).1,
-                })
+                }
             }
-            ElementType::Boolean(v) => Some(IncrementalParseResult {
+            ElementType::Boolean(v) => IncrementalParseResult {
                 parsed: Value::Bool(v),
                 remaining_input: data,
-            }),
+            },
             ElementType::Float => {
                 if data.len() < 4 {
-                    return None;
+                    return Err(ParseError::BufferUnderrun);
                 }
-                Some(IncrementalParseResult {
+                IncrementalParseResult {
                     parsed: Value::Float(LittleEndian::read_f32(data)),
                     remaining_input: data.split_at(4).1,
-                })
+                }
             }
             ElementType::Double => {
                 if data.len() < 8 {
-                    return None;
+                    return Err(ParseError::BufferUnderrun);
                 }
-                Some(IncrementalParseResult {
+                IncrementalParseResult {
                     parsed: Value::Double(LittleEndian::read_f64(data)),
                     remaining_input: data.split_at(8).1,
-                })
+                }
             }
             ElementType::Utf8String(data_len) | ElementType::ByteString(data_len) => {
                 let length_parsing = Parser::read_value(ElementType::Unsigned(data_len), data)?;
 
                 let data_len = match length_parsing.parsed {
                     Value::Unsigned(n) => n,
-                    _ => return None,
+                    _ => return Err(ParseError::BufferUnderrun),
                 };
 
                 if data_len > length_parsing.remaining_input.len() as u64 {
                     // String too short
-                    return None;
+                    return Err(ParseError::BufferUnderrun);
                 }
 
                 let (value, remaining_input) =
@@ -455,24 +466,24 @@ impl<'a> Parser<'a> {
                     }
                 };
 
-                Some(IncrementalParseResult {
+                IncrementalParseResult {
                     parsed,
                     remaining_input,
-                })
+                }
             }
-            ElementType::Null => Some(IncrementalParseResult {
+            ElementType::Null => IncrementalParseResult {
                 parsed: Value::Null,
                 remaining_input: data,
-            }),
-            ElementType::ContainerStart(t) => Some(IncrementalParseResult {
+            },
+            ElementType::ContainerStart(t) => IncrementalParseResult {
                 parsed: Value::ContainerStart(t),
                 remaining_input: data,
-            }),
-            ElementType::ContainerEnd => Some(IncrementalParseResult {
+            },
+            ElementType::ContainerEnd => IncrementalParseResult {
                 parsed: Value::ContainerEnd,
                 remaining_input: data,
-            }),
-        }
+            },
+        })
     }
 }
 
@@ -492,10 +503,13 @@ impl<'a> Iterator for Parser<'a> {
             None => None,
             Some((control, rest)) => {
                 let tag_parse = Parser::read_tag_value(TagType::for_control(*control), rest)?;
-                let value_parse = Parser::read_value(
+                let value_parse = match Parser::read_value(
                     ElementType::for_control(*control)?,
                     tag_parse.remaining_input,
-                )?;
+                ) {
+                    Err(_) => return None,
+                    Ok(v) => v,
+                };
 
                 // all parsing succeeded, advance input and return the parsing result
                 self.data = value_parse.remaining_input;
@@ -924,7 +938,7 @@ mod tests {
     fn check_value_read(in_type: ElementType, in_data: &[u8], out_type: Value, out_data: &[u8]) {
         assert_eq!(
             Parser::read_value(in_type, in_data),
-            Some(IncrementalParseResult {
+            Ok(IncrementalParseResult {
                 parsed: out_type,
                 remaining_input: out_data
             }),
@@ -1188,7 +1202,7 @@ mod tests {
     fn expect_short_read(in_type: ElementType, in_data: &[u8]) {
         assert_eq!(
             Parser::read_value(in_type, in_data),
-            None,
+            Err(ParseError::BufferUnderrun),
             "Expecting {:?}/{:?} to be short read (value is None)",
             in_type,
             in_data,
