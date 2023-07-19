@@ -258,7 +258,7 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 /// Parsing a valid stream:
 ///
 /// ```
-/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
+/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType, ParseResult};
 ///
 /// let mut parser = Parser::new(&[
 ///     0xD5, 0xBB, 0xAA, 0xDD, 0xCC, 0x01, 0x00,  // tag: 0xAABB/0xCCDD/1, structure start
@@ -271,23 +271,21 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 ///     0x18                                       // anonymous tag, container end
 /// ]);
 ///
-/// assert_eq!(parser.next(), Some(
+/// assert_eq!(parser.next(), Some(ParseResult::Record(
 ///         Record {
 ///             tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
 ///             value: Value::ContainerStart(ContainerType::Structure)
 ///         },
-/// ));
+/// )));
 /// assert!(!parser.done());
 ///
-/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 1}, value: Value::Null}));
-/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 16}, value: Value::Null}));
-/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 2}, value: Value::Bool(false)}));
-/// assert_eq!(parser.next(), Some(Record { tag: TagValue::ContextSpecific{tag: 3}, value: Value::Bool(true)}));
-/// assert_eq!(parser.next(), Some(Record { tag: TagValue::Implicit{tag: 0x1122}, value: Value::Unsigned(0x1234)}));
-/// assert_eq!(parser.next(), Some(Record { tag: TagValue::Implicit{tag: 0xabcd}, value: Value::Signed(-2)}));
-///
-///
-/// assert_eq!(parser.next(), Some(Record { tag: TagValue::Anonymous, value: Value::ContainerEnd}));
+/// assert_eq!(parser.next(), Some(ParseResult::Record(Record { tag: TagValue::ContextSpecific{tag: 1}, value: Value::Null})));
+/// assert_eq!(parser.next(), Some(ParseResult::Record(Record { tag: TagValue::ContextSpecific{tag: 16}, value: Value::Null})));
+/// assert_eq!(parser.next(), Some(ParseResult::Record(Record { tag: TagValue::ContextSpecific{tag: 2}, value: Value::Bool(false)})));
+/// assert_eq!(parser.next(), Some(ParseResult::Record(Record { tag: TagValue::ContextSpecific{tag: 3}, value: Value::Bool(true)})));
+/// assert_eq!(parser.next(), Some(ParseResult::Record(Record { tag: TagValue::Implicit{tag: 0x1122}, value: Value::Unsigned(0x1234)})));
+/// assert_eq!(parser.next(), Some(ParseResult::Record(Record { tag: TagValue::Implicit{tag: 0xabcd}, value: Value::Signed(-2)})));
+/// assert_eq!(parser.next(), Some(ParseResult::Record(Record { tag: TagValue::Anonymous, value: Value::ContainerEnd})));
 /// assert!(parser.done());
 ///
 /// assert_eq!(parser.next(), None);
@@ -297,19 +295,19 @@ pub(crate) struct IncrementalParseResult<'a, T> {
 /// Parsing an invalid stream (tag terminated early)
 ///
 /// ```
-/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType};
+/// use tag_length_value_stream::{Record, Parser, TagValue, Value, ContainerType, ParseResult};
 ///
 /// let mut parser = Parser::new(&[
 ///     0xD5, 0xBB, 0xAA, 0xDD, 0xCC, 0x01, 0x00,  // tag: 0xAABB/0xCCDD/1, structure start
 ///     0x82, 0xcd,                                // tag: implicit tag 0x??cd<truncated> (no tag, no signed data)
 /// ]);
 ///
-/// assert_eq!(parser.next(), Some(
+/// assert_eq!(parser.next(), Some(ParseResult::Record(
 ///         Record {
 ///             tag: TagValue::Full { vendor_id: 0xAABB, profile_id: 0xCCDD, tag: 1 },
 ///             value: Value::ContainerStart(ContainerType::Structure)
 ///         },
-/// ));
+/// )));
 /// assert!(!parser.done());
 ///
 /// assert_eq!(parser.next(), None);
@@ -487,6 +485,13 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Represents an item in a parse operation
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ParseResult<'a> {
+    Record(Record<'a>),
+    Error,
+}
+
 /// Iterating over a Parser means getting the underlying TLV data entries
 /// from the stream.
 ///
@@ -496,7 +501,7 @@ impl<'a> Parser<'a> {
 /// If None is returned due to a parsing error, then `done` will return false
 /// even though `next()` returned None.
 impl<'a> Iterator for Parser<'a> {
-    type Item = Record<'a>;
+    type Item = ParseResult<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.data.split_first() {
@@ -507,16 +512,16 @@ impl<'a> Iterator for Parser<'a> {
                     ElementType::for_control(*control)?,
                     tag_parse.remaining_input,
                 ) {
-                    Err(_) => return None,
+                    Err(_) => return Some(ParseResult::Error),
                     Ok(v) => v,
                 };
 
                 // all parsing succeeded, advance input and return the parsing result
                 self.data = value_parse.remaining_input;
-                Some(Self::Item {
+                Some(Self::Item::Record(Record {
                     tag: tag_parse.parsed,
                     value: value_parse.parsed,
-                })
+                }))
             }
         }
     }
@@ -1308,7 +1313,7 @@ mod tests {
         ];
 
         for value in expected {
-            assert_eq!(parser.next(), Some(value));
+            assert_eq!(parser.next(), Some(ParseResult::Record(value)));
         }
         assert!(parser.done());
     }
@@ -1416,7 +1421,7 @@ mod tests {
         ];
 
         for value in expected {
-            assert_eq!(parser.next(), Some(value));
+            assert_eq!(parser.next(), Some(ParseResult::Record(value)));
         }
         assert!(parser.done());
     }
@@ -1578,7 +1583,7 @@ mod tests {
         let parser = Parser::new(accumulator.buffer());
 
         for (parsed, original) in parser.zip(records.iter()) {
-            assert_eq!(*original, parsed);
+            assert_eq!(ParseResult::Record(*original), parsed);
         }
 
         let parser = Parser::new(accumulator.buffer());
